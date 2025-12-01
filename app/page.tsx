@@ -137,14 +137,9 @@ export default function HomePage() {
 
       {/* FOOTER */}
       <footer className="w-full border-t border-slate-200 dark:border-white/10 py-10 mt-10 text-center text-sm text-slate-600 dark:text-white/50">
-        <div className="space-x-4">
-          <a href="/about" className="hover:underline">About</a>
-          <a href="/privacy" className="hover:underline">Privacy</a>
-          <a href="/safety" className="hover:underline">Safety</a>
-          <a href="/contact" className="hover:underline">Contact</a>
-        </div>
-        <p className="mt-4">© {new Date().getFullYear()} RANIA — Made in Kenya</p>
+       
+        <p className="mt-4">© {new Date().getFullYear()} RANIA </p>
       </footer>
-    </div>
+    </div> 
   )
 }
