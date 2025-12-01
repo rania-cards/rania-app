@@ -195,7 +195,7 @@ export default function MomentViewPage() {
   }
 
   const isCompleted = Boolean(hiddenText)
-  const baseUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000/"
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "http://rania-online.app"
   const startUrl = `${baseUrl}/moments/create`
 
   return (
