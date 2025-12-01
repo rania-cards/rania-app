@@ -1,115 +1,98 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-"use client";
+"use client"
+import { useState, useEffect } from "react"
+import type React from "react"
 
-import { useState, useEffect } from "react";
-import Script from "next/script";
-import { apiCreateMoment } from "@/lib/rania/client";
-import type {
-  RaniaModeKey,
-  RaniaLanguage,
-  RaniaTone,
-  RaniaDeliveryFormat,
-} from "@/lib/rania/types";
+import Script from "next/script"
+import { apiCreateMoment } from "@/lib/rania/client"
+import type { RaniaModeKey, RaniaLanguage, RaniaTone, RaniaDeliveryFormat } from "@/lib/rania/types"
 
 declare global {
   interface Window {
     PaystackPop: {
       setup(options: {
-        key: string;
-        email: string;
-        amount: number;
-        currency?: string;
-        ref?: string;
-        metadata?: any;
-        callback: (response: { reference: string }) => void;
-        onClose: () => void;
-      }): { openIframe: () => void };
-    };
+        key: string
+        email: string
+        amount: number
+        currency?: string
+        ref?: string
+        metadata?: any
+        callback: (response: { reference: string }) => void
+        onClose: () => void
+      }): { openIframe: () => void }
+    }
   }
 }
 
-const MODES: { key: RaniaModeKey; label: string; description: string }[] = [
-  { key: "CRUSH_REVEAL", label: "Crush Reveal", description: "Say what you admire but never said." },
-  { key: "DEEP_CONFESSION", label: "Deep Confession", description: "Explain yourself honestly." },
-  { key: "BESTIE_TRUTH_CHAIN", label: "Bestie Truth Chain", description: "Friendship truth, no sugar." },
-  { key: "ROAST_ME_SOFTLY", label: "Roast Me Softly", description: "Safe, honest banter." },
-  { key: "FORGIVE_ME", label: "Forgive Me Mode", description: "Accountable, grown-up apology." },
-  { key: "CLOSURE", label: "Closure Mode", description: "End a chapter with clarity." },
-];
+const MODES: { key: RaniaModeKey; label: string; description: string; emoji: string }[] = [
+  { key: "CRUSH_REVEAL", label: "Crush Reveal", description: "Say what you admire but never said.", emoji: "💕" },
+  { key: "DEEP_CONFESSION", label: "Deep Confession", description: "Explain yourself honestly.", emoji: "🎭" },
+  { key: "BESTIE_TRUTH_CHAIN", label: "Bestie Truth", description: "Friendship truth, no sugar.", emoji: "👯" },
+  { key: "ROAST_ME_SOFTLY", label: "Roast Me", description: "Safe, honest banter.", emoji: "🔥" },
+  { key: "FORGIVE_ME", label: "Forgive Me", description: "Accountable, grown-up apology.", emoji: "🤝" },
+  { key: "CLOSURE", label: "Closure", description: "End a chapter with clarity.", emoji: "✨" },
+]
 
 const LANG_OPTIONS: { value: RaniaLanguage; label: string }[] = [
-  { value: "en", label: "English" },
-  { value: "sw", label: "Swahili" },
-  { value: "sh", label: "Sheng" },
-];
+  { value: "en", label: "🇬🇧 English" },
+  { value: "sw", label: "🇹🇿 Swahili" },
+  { value: "sh", label: "🇰🇪 Sheng" },
+]
 
 const TONE_OPTIONS: { value: RaniaTone; label: string }[] = [
-  { value: "soft", label: "Soft" },
-  { value: "neutral", label: "Neutral" },
-  { value: "dark", label: "Deep" },
-];
+  { value: "soft", label: "Soft 🌸" },
+  { value: "neutral", label: "Neutral 😐" },
+  { value: "dark", label: "Deep 🌙" },
+]
 
 const DELIVERY_OPTIONS: { value: RaniaDeliveryFormat; label: string }[] = [
   { value: "still", label: "Still card" },
-  { value: "gif", label: "Looping GIF (later)" },
-  { value: "motion", label: "Motion (later)" },
-];
+  { value: "gif", label: "GIF (coming)" },
+  { value: "motion", label: "Motion (coming)" },
+]
 
-const PREMIUM_PRICE_KES = 50;
+const PREMIUM_PRICE_KES = 50
 
 export default function CreateMomentPage() {
-  const [modeKey, setModeKey] = useState<RaniaModeKey>("BESTIE_TRUTH_CHAIN");
-  const [language, setLanguage] = useState<RaniaLanguage>("en");
-  const [tone, setTone] = useState<RaniaTone>("soft");
-  const [deliveryFormat, setDeliveryFormat] = useState<RaniaDeliveryFormat>("still");
-  const [premiumReveal, setPremiumReveal] = useState<boolean>(true);
-
-  const [teaserText, setTeaserText] = useState<string>("Real talk time… reply first.");
-  const [hiddenText, setHiddenText] = useState<string>(
-    "I appreciate you more than I show, even when I’m distant."
-  );
-
-  const [email, setEmail] = useState<string>("test@example.com");
-
-  const [creating, setCreating] = useState(false);
-  const [paying, setPaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [shortCode, setShortCode] = useState<string | null>(null);
-  const [momentId, setMomentId] = useState<string | null>(null);
+  const [modeKey, setModeKey] = useState<RaniaModeKey>("BESTIE_TRUTH_CHAIN")
+  const [language, setLanguage] = useState<RaniaLanguage>("en")
+  const [tone, setTone] = useState<RaniaTone>("soft")
+  const [deliveryFormat, setDeliveryFormat] = useState<RaniaDeliveryFormat>("still")
+  const [premiumReveal, setPremiumReveal] = useState<boolean>(true)
+  const [teaserText, setTeaserText] = useState<string>("Real talk time… reply first.")
+  const [hiddenText, setHiddenText] = useState<string>("I appreciate you more than I show, even when I'm distant.")
+  const [email, setEmail] = useState<string>("test@example.com")
+  const [creating, setCreating] = useState(false)
+  const [paying, setPaying] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [shortCode, setShortCode] = useState<string | null>(null)
+  const [momentId, setMomentId] = useState<string | null>(null)
 
   const baseUrl =
     typeof window !== "undefined"
-      ? process.env.NEXT_PUBLIC_BASE_URL ?? window.location.origin
-      : process.env.NEXT_PUBLIC_BASE_URL ?? "https://raniaonline.com";
+      ? (process.env.NEXT_PUBLIC_BASE_URL ?? window.location.origin)
+      : (process.env.NEXT_PUBLIC_BASE_URL ?? "https://raniaonline.com")
 
-  const momentUrl = shortCode ? `${baseUrl}/m/${shortCode}` : "";
-
+  const momentUrl = shortCode ? `${baseUrl}/m/${shortCode}` : ""
   const caption = shortCode
     ? premiumReveal
       ? `Reply to unlock what I really said: ${momentUrl}`
       : `Reply here and complete the moment: ${momentUrl}`
-    : "";
+    : ""
 
-  const paystackKey =
-    typeof window !== "undefined"
-      ? process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ?? ""
-      : "";
+  const paystackKey = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ?? "") : ""
 
-  const currency =
-    typeof window !== "undefined"
-      ? process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "KES"
-      : "KES";
+  const currency = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "KES") : "KES"
 
   useEffect(() => {
-    // Reset result when user changes core inputs
-    setShortCode(null);
-    setMomentId(null);
-    setError(null);
-  }, [modeKey, teaserText, hiddenText, premiumReveal, language, tone]);
+    setShortCode(null)
+    setMomentId(null)
+    setError(null)
+  }, [modeKey, teaserText, hiddenText, premiumReveal, language, tone])
 
   async function createFreeMoment() {
-    setCreating(true);
-    setError(null);
+    setCreating(true)
+    setError(null)
     try {
       const res = await apiCreateMoment({
         modeKey,
@@ -122,20 +105,19 @@ export default function CreateMomentPage() {
         customHiddenText: hiddenText.trim() || undefined,
         premiumReveal: false,
         identity: {},
-      });
-
-      setShortCode(res.shortCode);
-      setMomentId(res.momentId);
+      })
+      setShortCode(res.shortCode)
+      setMomentId(res.momentId)
     } catch (err: any) {
-      setError(err.message ?? "Failed to create moment");
+      setError(err.message ?? "Failed to create moment")
     } finally {
-      setCreating(false);
+      setCreating(false)
     }
   }
 
   async function createPremiumMomentAfterPayment(reference: string) {
-    setCreating(true);
-    setError(null);
+    setCreating(true)
+    setError(null)
     try {
       const res = await apiCreateMoment({
         modeKey,
@@ -148,325 +130,285 @@ export default function CreateMomentPage() {
         customHiddenText: hiddenText.trim() || undefined,
         premiumReveal: true,
         paymentReference: reference,
-        skipPaymentCheck: true, // we already took money via Paystack inline
+        skipPaymentCheck: true,
         identity: {},
-      });
-
-      setShortCode(res.shortCode);
-      setMomentId(res.momentId);
+      })
+      setShortCode(res.shortCode)
+      setMomentId(res.momentId)
     } catch (err: any) {
-      setError(err.message ?? "Failed to create premium moment");
+      setError(err.message ?? "Failed to create premium moment")
     } finally {
-      setCreating(false);
+      setCreating(false)
     }
   }
 
   function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
+    e.preventDefault()
+    setError(null)
     if (!premiumReveal) {
-      void createFreeMoment();
-      return;
+      void createFreeMoment()
+      return
     }
 
-    // Premium flow → Paystack inline
     if (!window.PaystackPop || !paystackKey) {
-      setError("Payment library not loaded or Paystack key missing.");
-      return;
+      setError("Payment library not loaded or Paystack key missing.")
+      return
     }
 
     if (!email || !email.includes("@")) {
-      setError("Enter a valid email for Paystack.");
-      return;
+      setError("Enter a valid email for Paystack.")
+      return
     }
 
-    setPaying(true);
-
+    setPaying(true)
     const handler = window.PaystackPop.setup({
       key: paystackKey,
       email,
-      amount: PREMIUM_PRICE_KES * 100, // Paystack expects amount in "cents"
+      amount: PREMIUM_PRICE_KES * 100,
       currency,
       metadata: {
         modeKey,
         type: "PREMIUM_REVEAL",
       },
-      callback: function (response) {
-        setPaying(false);
+      callback: (response) => {
+        setPaying(false)
         if (response.reference) {
-          void createPremiumMomentAfterPayment(response.reference);
+          void createPremiumMomentAfterPayment(response.reference)
         } else {
-          setError("Payment completed but no reference returned.");
+          setError("Payment completed but no reference returned.")
         }
       },
-      onClose: function () {
-        setPaying(false);
+      onClose: () => {
+        setPaying(false)
       },
-    });
-
-    handler.openIframe();
+    })
+    handler.openIframe()
   }
 
   return (
     <>
-      {/* Paystack Inline Script */}
       <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
 
-      <div className="relative">
-        {/* Background gradient */}
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-emerald-900/20 via-black to-black" />
-        <div className="pointer-events-none absolute -top-32 right-[-100px] h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-40 left-[-80px] h-72 w-72 rounded-full bg-purple-500/10 blur-3xl" />
-
-        <div className="mb-6 flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Create a RANIA moment</h1>
-          <p className="text-sm text-white/70">
-            Turn honest feelings into a playable WhatsApp moment. They reply, the truth unlocks,
-            and you both get a screenshot-worthy story.
+      <div className="space-y-8 animate-slide-in-up">
+        {/* Header */}
+        <div className="space-y-3">
+          <h1 className="text-4xl sm:text-5xl font-black tracking-tight">
+            <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
+              Create Your Moment
+            </span>
+          </h1>
+          <p className="text-base text-white/70 max-w-2xl">
+            Choose how to be vulnerable. Write what you really feel. Let them unlock the truth. 💭
           </p>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1.15fr,0.85fr]">
+        {/* Main form grid */}
+        <div className="grid gap-8 lg:grid-cols-[1fr,1.2fr]">
           {/* Left: Form */}
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-5 rounded-2xl border border-white/10 bg-black/40 p-4 shadow-xl shadow-black/40 backdrop-blur"
-          >
-            {/* Mode selection */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-white/70">Mode</label>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-3">
+              <label className="text-sm font-bold text-white/80">Pick Your Mode</label>
               <div className="grid grid-cols-2 gap-2">
                 {MODES.map((m) => {
-                  const active = m.key === modeKey;
+                  const active = m.key === modeKey
                   return (
                     <button
                       key={m.key}
                       type="button"
                       onClick={() => setModeKey(m.key)}
-                      className={`group flex flex-col rounded-xl border px-3 py-2 text-left text-xs transition-transform ${
+                      className={`group relative rounded-2xl p-4 text-left transition-all duration-300 transform ${
                         active
-                          ? "border-emerald-400 bg-emerald-500/10 shadow-md shadow-emerald-500/30 scale-[1.02]"
-                          : "border-white/10 bg-white/5 hover:border-emerald-300/60 hover:bg-emerald-500/5 hover:scale-[1.01]"
+                          ? "glass-dark border-purple-400/50 scale-105 shadow-lg shadow-purple-500/30"
+                          : "glass hover:border-white/20 hover:scale-[1.02]"
                       }`}
                     >
-                      <span
-                        className={`text-[11px] uppercase tracking-wide ${
-                          active ? "text-emerald-300" : "text-emerald-200/70"
-                        }`}
+                      <div className="text-2xl mb-2">{m.emoji}</div>
+                      <div
+                        className={`font-bold text-sm transition-colors ${active ? "text-purple-300" : "text-white"}`}
                       >
                         {m.label}
-                      </span>
-                      <span className="mt-1 text-[11px] text-white/65">{m.description}</span>
+                      </div>
+                      <div className="text-[11px] text-white/50 leading-tight mt-1">{m.description}</div>
                     </button>
-                  );
+                  )
                 })}
               </div>
             </div>
 
-            {/* Meta */}
-            <div className="grid grid-cols-3 gap-3 text-xs">
-              <div className="space-y-1">
-                <label className="text-white/70">Language</label>
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value as RaniaLanguage)}
-                  className="w-full rounded-lg border border-white/15 bg-black/50 px-2 py-1.5 text-xs focus:border-emerald-400 focus:outline-none"
-                >
-                  {LANG_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-white/70">Tone</label>
-                <select
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value as RaniaTone)}
-                  className="w-full rounded-lg border border-white/15 bg-black/50 px-2 py-1.5 text-xs focus:border-emerald-400 focus:outline-none"
-                >
-                  {TONE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-white/70">Format</label>
-                <select
-                  value={deliveryFormat}
-                  onChange={(e) => setDeliveryFormat(e.target.value as RaniaDeliveryFormat)}
-                  className="w-full rounded-lg border border-white/15 bg-black/50 px-2 py-1.5 text-xs focus:border-emerald-400 focus:outline-none"
-                >
-                  {DELIVERY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+            <div className="glass rounded-2xl p-4 space-y-4">
+              <h3 className="font-bold text-white text-sm">Customize Your Vibe</h3>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "Language", options: LANG_OPTIONS, state: language, setState: setLanguage },
+                  { label: "Tone", options: TONE_OPTIONS, state: tone, setState: setTone },
+                  { label: "Format", options: DELIVERY_OPTIONS, state: deliveryFormat, setState: setDeliveryFormat },
+                ].map((group) => (
+                  <div key={group.label} className="space-y-2">
+                    <label className="text-xs font-bold text-white/70">{group.label}</label>
+                    <select
+                      value={group.state}
+                      onChange={(e) => group.setState(e.target.value as any)}
+                      className="w-full rounded-lg bg-black/40 border border-white/15 px-3 py-2 text-xs font-medium focus:border-purple-400 focus:outline-none transition"
+                    >
+                      {group.options.map((opt: any) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Premium toggle + email */}
-            <div className="flex flex-col gap-3 rounded-xl border border-white/12 bg-gradient-to-r from-white/5 via-black/60 to-emerald-900/20 p-3 text-xs">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="font-semibold text-white">Reply-to-unlock</div>
-                  <div className="text-[11px] text-white/65">
+            <div className="glass rounded-2xl p-4 space-y-4 border-purple-400/30">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🔐</span>
+                    <div className="font-bold text-white">Reply-to-Unlock</div>
+                  </div>
+                  <div className="text-xs text-white/60">
                     They must reply to see the full message. Price:{" "}
-                    <span className="font-semibold text-emerald-300">
-                      KES {PREMIUM_PRICE_KES}
-                    </span>
-                    .
+                    <span className="font-bold text-purple-300">KES {PREMIUM_PRICE_KES}</span>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setPremiumReveal((v) => !v)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full border border-black/60 transition ${
-                    premiumReveal ? "bg-emerald-400" : "bg-white/15"
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full border-2 transition-all ${
+                    premiumReveal ? "border-purple-400 bg-purple-500/30" : "border-white/20 bg-white/10"
                   }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-black shadow transition ${
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
                       premiumReveal ? "translate-x-5" : "translate-x-1"
                     }`}
                   />
                 </button>
               </div>
+
               {premiumReveal && (
-                <div className="grid grid-cols-[1.4fr,1fr] gap-3 items-center">
-                  <div className="space-y-1">
-                    <div className="text-[11px] text-white/65">Email for Paystack receipt</div>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full rounded-lg border border-white/15 bg-black/50 px-2 py-1.5 text-[11px] focus:border-emerald-400 focus:outline-none"
-                      placeholder="you@campus.ac.ke"
-                    />
-                  </div>
-                  <div className="text-[11px] text-white/45">
-                    Uses Paystack test/live keys in your environment.
-                  </div>
+                <div className="space-y-3 border-t border-white/10 pt-3">
+                  <label className="text-xs font-bold text-white/70">Email for Receipt</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-lg bg-black/40 border border-white/15 px-3 py-2 text-xs focus:border-purple-400 focus:outline-none transition"
+                    placeholder="you@campus.ac.ke"
+                  />
                 </div>
               )}
             </div>
 
-            {/* Text inputs */}
-            <div className="space-y-3 text-xs">
-              <div className="space-y-1">
-                <label className="text-white/75">Teaser (visible)</label>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-white/80 flex items-center gap-2">👀 Teaser (Visible)</label>
                 <textarea
                   value={teaserText}
                   onChange={(e) => setTeaserText(e.target.value)}
                   rows={2}
-                  className="w-full rounded-lg border border-white/15 bg-black/50 px-2 py-2 text-xs focus:border-emerald-400 focus:outline-none"
+                  className="w-full rounded-lg bg-black/40 border border-white/15 px-3 py-2 text-sm focus:border-purple-400 focus:outline-none transition resize-none"
                   placeholder="Real talk time… reply first."
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-white/75">
-                  Hidden message{" "}
-                  <span className="text-white/40">(revealed only after reply)</span>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-white/80 flex items-center gap-2">
+                  🔒 Hidden Message
+                  <span className="text-xs font-normal text-white/50">(Unlocked after reply)</span>
                 </label>
                 <textarea
                   value={hiddenText}
                   onChange={(e) => setHiddenText(e.target.value)}
-                  rows={3}
-                  className="w-full rounded-lg border border-white/15 bg-black/50 px-2 py-2 text-xs focus:border-emerald-400 focus:outline-none"
-                  placeholder="I appreciate you more than I show, even when I’m distant."
+                  rows={4}
+                  className="w-full rounded-lg bg-black/40 border border-white/15 px-3 py-2 text-sm focus:border-purple-400 focus:outline-none transition resize-none"
+                  placeholder="I appreciate you more than I show, even when I'm distant."
                 />
               </div>
             </div>
 
             {error && (
-              <p className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs text-red-200">
-                {error}
-              </p>
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200 animate-glow">
+                ⚠️ {error}
+              </div>
             )}
 
+            {/* Submit button */}
             <button
               type="submit"
               disabled={creating || paying}
-              className="relative w-full overflow-hidden rounded-full bg-emerald-500 py-2 text-sm font-medium text-black shadow-lg shadow-emerald-500/40 transition hover:bg-emerald-400 disabled:opacity-60"
+              className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-black font-bold text-base shadow-lg shadow-purple-500/50 hover:shadow-purple-500/75 transition-all duration-300 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <span className="relative z-10">
-                {premiumReveal
-                  ? paying
-                    ? "Opening Paystack…"
-                    : creating
-                    ? "Finalizing moment…"
-                    : `Pay KES ${PREMIUM_PRICE_KES} & create premium moment`
+              {premiumReveal
+                ? paying
+                  ? "💳 Opening Paystack…"
                   : creating
-                  ? "Creating free moment…"
-                  : "Create free moment"}
-              </span>
-              <span className="pointer-events-none absolute inset-0 bg-gradient-to-r from-emerald-300/40 via-white/20 to-emerald-400/40 opacity-0 transition group-hover:opacity-100" />
+                    ? "⏳ Finalizing moment…"
+                    : `💰 Pay KES ${PREMIUM_PRICE_KES} & Share`
+                : creating
+                  ? "⏳ Creating…"
+                  : "✨ Create Free Moment"}
             </button>
 
-            <p className="text-[11px] text-white/45">
-              RANIA never generates fake activity. Every reply is real, every moment is between real
-              people.
-            </p>
+            <p className="text-xs text-white/50 text-center">✋ No bots. No fake activity. 100% real human moments.</p>
           </form>
 
-          {/* Right: Live preview & sharing */}
+          {/* Right: Live preview */}
           <div className="space-y-4">
             {/* Card preview */}
-            <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-black/70 to-black p-4 shadow-lg shadow-black/50">
-              <div className="mb-2 flex items-center justify-between text-[11px]">
-                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 font-semibold uppercase tracking-wide text-emerald-200">
-                  {MODES.find((m) => m.key === modeKey)?.label ?? "RANIA Moment"}
-                </span>
-                <span className="text-white/50">
-                  {premiumReveal ? "Reply-to-unlock" : "Free mode"}
-                </span>
-              </div>
-              <div className="rounded-xl border border-white/15 bg-black/70 px-3 py-4 shadow-inner shadow-black/60">
-                <p className="text-sm leading-snug text-white">{teaserText}</p>
-                <div className="mt-3 flex items-center justify-between text-[11px] text-white/40">
-                  <span>RANIA · emotional thread</span>
-                  <span className="rounded-full bg-white/10 px-2 py-0.5">
-                    rania.co/xyz
+            <div className="glass-dark rounded-2xl p-6 space-y-4 hover:border-purple-400/50 transition">
+              <div className="flex items-center justify-between mb-4">
+                <div className="inline-flex items-center gap-2 rounded-full bg-purple-500/20 px-3 py-1">
+                  <span className="text-lg">{MODES.find((m) => m.key === modeKey)?.emoji}</span>
+                  <span className="text-xs font-bold uppercase text-purple-200">
+                    {MODES.find((m) => m.key === modeKey)?.label}
                   </span>
                 </div>
+                <span className="text-xs font-medium px-3 py-1 rounded-full bg-white/10 text-white/60">
+                  {premiumReveal ? "🔐 Reply-Unlock" : "🆓 Free"}
+                </span>
               </div>
-              <p className="mt-2 text-[11px] text-white/50">
-                This is roughly how it appears when someone taps your link from WhatsApp Status or a
-                group chat.
+
+              <div className="space-y-3 rounded-xl bg-black/50 border border-white/10 p-4">
+                <p className="text-base leading-relaxed text-white font-medium">
+                  {teaserText || "Your teaser appears here…"}
+                </p>
+                <div className="flex items-center justify-between text-xs text-white/40 pt-2 border-t border-white/10">
+                  <span>RANIA · emotional thread</span>
+                  <span className="rounded px-2 py-1 bg-white/10">{shortCode || "soon"}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-white/50 italic">
+                This is how it looks when shared in WhatsApp Status. Screenshot-worthy. 📸
               </p>
             </div>
 
-            {/* WhatsApp caption */}
+            {/* WhatsApp caption section */}
             {shortCode && (
-              <div className="space-y-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/5 p-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-emerald-300">WhatsApp caption</span>
-                  <span className="text-[11px] text-emerald-200/70">
-                    Share to Status or a group
-                  </span>
+              <div className="glass-dark rounded-2xl p-6 space-y-4 border-purple-400/30 bg-gradient-to-br from-purple-500/10 via-black/50 to-black/50">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">💬</span>
+                  <h3 className="font-bold text-purple-300">Copy for WhatsApp</h3>
                 </div>
                 <textarea
                   readOnly
-                  rows={3}
-                  className="w-full rounded-md border border-emerald-400/40 bg-black/60 p-2 text-[11px] text-emerald-50"
+                  rows={4}
+                  className="w-full rounded-lg bg-black/60 border border-white/15 px-3 py-2 text-xs text-white/80 font-mono resize-none"
                   value={caption}
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    if (caption) navigator.clipboard.writeText(caption);
+                    if (caption) navigator.clipboard.writeText(caption)
                   }}
-                  className="mt-1 inline-flex items-center rounded-full border border-emerald-400/70 px-3 py-1 text-[11px] text-emerald-200 hover:bg-emerald-400/10"
+                  className="w-full py-2 rounded-lg bg-purple-500/20 border border-purple-400/50 text-purple-300 font-bold text-sm hover:bg-purple-500/30 transition"
                 >
-                  Copy caption
+                  📋 Copy Caption
                 </button>
-                <p className="text-[10px] text-emerald-200/70">
-                  Paste this directly as your WhatsApp Status description or in a group chat.
+                <p className="text-xs text-purple-200/70">
+                  Paste directly in WhatsApp Status or group chat. The link will drive your friends here. 🚀
                 </p>
               </div>
             )}
@@ -474,5 +416,5 @@ export default function CreateMomentPage() {
         </div>
       </div>
     </>
-  );
+  )
 }
