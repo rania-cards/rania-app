@@ -8,7 +8,7 @@ interface Params {
 }
 
 /**
- * Run Deep Truth mode for a moment – returns AI breakdown.
+ * Run Deep Truth mode for a moment – paid and tracked.
  */
 export async function POST(req: NextRequest, { params }: Params) {
   try {
@@ -45,6 +45,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         guestId: body.identity?.guestId ?? req.headers.get("x-rania-guest-id") ?? undefined,
         authUserId: body.identity?.authUserId ?? null,
       },
+      paymentReference: body.paymentReference,
+      skipPaymentCheck: body.skipPaymentCheck,
     };
 
     const result = await runDeepTruth(payload);
@@ -57,16 +59,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       { status: 200 }
     );
   } catch (err: any) {
-    console.error("Error running Deep Truth for moment:", {
+    console.error("Error running Deep Truth:", {
       message: err?.message,
       code: err?.code,
-      details: err?.details,
     });
 
     return NextResponse.json(
       {
         success: false,
-        error: err?.message ?? "Failed to run Deep Truth analysis",
+        error: err?.message ?? "Failed to generate Deep Truth",
       },
       { status: 400 }
     );

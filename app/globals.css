@@ -1,26 +1,310 @@
 @import "tailwindcss";
 
 :root {
+  /* Light mode defaults */
   --background: #ffffff;
   --foreground: #171717;
+  --card: #f5f5f5;
+  --card-foreground: #171717;
+  --muted: #e5e5e5;
+  --muted-foreground: #737373;
+  --border: #e5e5e5;
+  --input: #f5f5f5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark mode */
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --card: #1a1a1a;
+    --card-foreground: #ededed;
+    --muted: #404040;
+    --muted-foreground: #a3a3a3;
+    --border: #262626;
+    --input: #0f0f0f;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  /* Light mode text visibility fixes */
+  @media (prefers-color-scheme: light) {
+    /* Ensure text is visible on light backgrounds */
+    .text-white {
+      @apply text-slate-900;
+    }
+
+    .text-white\/70 {
+      @apply text-slate-700;
+    }
+
+    .text-white\/60 {
+      @apply text-slate-600;
+    }
+
+    .text-white\/50 {
+      @apply text-slate-500;
+    }
+
+    .text-white\/40 {
+      @apply text-slate-400;
+    }
+
+    /* Glass effect for light mode */
+    .glass {
+      @apply backdrop-blur-xl bg-white/60 border border-slate-200;
+    }
+
+    .glass-dark {
+      @apply backdrop-blur-xl bg-white/70 border border-slate-200;
+    }
+
+    /* Ensure borders are visible */
+    .border-white\/10 {
+      @apply border-slate-200;
+    }
+
+    .border-white\/15 {
+      @apply border-slate-300;
+    }
+
+    .border-white\/20 {
+      @apply border-slate-300;
+    }
+
+    /* Background adjustments */
+    .bg-white\/5 {
+      @apply bg-slate-50;
+    }
+
+    .bg-white\/10 {
+      @apply bg-slate-100;
+    }
+
+    .bg-black\/40 {
+      @apply bg-slate-100;
+    }
+
+    .bg-black\/50 {
+      @apply bg-slate-100;
+    }
+
+    .bg-black\/60 {
+      @apply bg-slate-200;
+    }
+
+    .bg-black\/70 {
+      @apply bg-slate-300;
+    }
+
+    /* Input styling */
+    input, textarea, select {
+      @apply bg-slate-100 text-slate-900 border-slate-300;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      @apply text-slate-500;
+    }
+
+    /* Button text visibility */
+    .btn-primary,
+    button[class*="bg-gradient"] {
+      @apply text-white;
+    }
+  }
+
+  /* Custom animations */
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+
+  @keyframes glow {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.8;
+    }
+  }
+
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideInDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes blob {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    33% {
+      transform: translate(30px, -50px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+  }
+
+  @keyframes pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Animation utility classes */
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite;
+  }
+
+  .animate-slide-in-up {
+    animation: slideInUp 0.6s ease-out;
+  }
+
+  .animate-slide-in-down {
+    animation: slideInDown 0.6s ease-out;
+  }
+
+  .animate-blob {
+    animation: blob 7s infinite;
+  }
+
+  .animate-pulse-ring {
+    animation: pulse-ring 2s infinite;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  .animate-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  .fade-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  /* Glassmorphism utilities */
+  .glass {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1rem;
+  }
+
+  .glass-dark {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background-color: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1rem;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    background: linear-gradient(to right, var(--tw-gradient-stops));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Smooth transitions */
+  .transition-smooth {
+    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Responsive container */
+  .container-max {
+    max-width: 80rem;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Utility classes for animation delays */
+.animation-delay-1000 {
+  animation-delay: 1s;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-3000 {
+  animation-delay: 3s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
 }

@@ -39,7 +39,7 @@ export async function apiCreateMoment(payload: CreateMomentPayload) {
 }
 
 export async function apiGetMoment(shortCode: string) {
- const res = await fetch(`/api/rania/moments/by-code/${shortCode}`, {
+  const res = await fetch(`/api/rania/moments/by-code/${shortCode}`, {
     method: "GET",
     headers: {
       "x-rania-guest-id": getOrCreateGuestId(),
@@ -61,8 +61,11 @@ export async function apiGetMoment(shortCode: string) {
   }>(res);
 }
 
-export async function apiReplyToMoment(shortCode: string, payload: Omit<ReplyPayload, "shortCode">) {
- const res = await fetch(`/api/rania/moments/by-code/${shortCode}/reply`, {
+export async function apiReplyToMoment(
+  shortCode: string,
+  payload: Omit<ReplyPayload, "shortCode">
+) {
+  const res = await fetch(`/api/rania/moments/by-code/${shortCode}/reply`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -70,6 +73,7 @@ export async function apiReplyToMoment(shortCode: string, payload: Omit<ReplyPay
     },
     body: JSON.stringify(payload),
   });
+
   return handleResponse<{
     success: boolean;
     replyId: string;
@@ -77,14 +81,26 @@ export async function apiReplyToMoment(shortCode: string, payload: Omit<ReplyPay
   }>(res);
 }
 
-export async function apiDeepTruth(momentId: string, payload: Omit<DeepTruthPayload, "momentId">) {
+/**
+ * Run Deep Truth with optional payment handling
+ * @param momentId - The moment ID
+ * @param options - Payment options (paymentReference, skipPaymentCheck)
+ */
+export async function apiDeepTruth(
+  momentId: string,
+  options?: { paymentReference?: string; skipPaymentCheck?: boolean }
+) {
   const res = await fetch(`/api/rania/moments/${momentId}/deep-truth`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-rania-guest-id": getOrCreateGuestId(),
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      identity: {},
+      paymentReference: options?.paymentReference,
+      skipPaymentCheck: options?.skipPaymentCheck ?? false,
+    }),
   });
 
   return handleResponse<{

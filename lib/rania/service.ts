@@ -275,22 +275,32 @@ export async function createReply(payload: ReplyPayload) {
 }
 
 // -----------------------------------------------------------------------------
-// 4) Deep Truth
+// 4) Deep Truth - with payment tracking and event logging
 // -----------------------------------------------------------------------------
 
 export async function runDeepTruth(payload: DeepTruthPayload) {
   const identity = await ensureIdentity(payload.identity);
 
-  // Payment or pass – for now we assume Paystack handled it if needed
+  // 1. Charge or record Deep Truth purchase
   await chargeOrUsePass({
     identityId: identity.id,
     pricingCode: DEEP_TRUTH_CODE,
     momentId: payload.momentId,
-    paymentReference: undefined,
-    skipPayment: true, // v0: no extra charge until you wire it
+    paymentReference: payload.paymentReference,
+    skipPayment: payload.skipPaymentCheck ?? false, // must be true when called from Paystack inline
   });
 
+  // 2. Generate Deep Truth text via OpenAI
   const deepTruthText = await generateDeepTruthForMoment(payload.momentId);
+
+  // 3. Optional: log usage event (on top of purchase event)
+  await supabaseAdmin.from("rania_events").insert({
+    identity_id: identity.id,
+    moment_id: payload.momentId,
+    event_type: "deep_truth_purchased",
+    properties: { source: "receiver_page", from_logic: "runDeepTruth" },
+  });
+
   return { deepTruth: deepTruthText };
 }
 

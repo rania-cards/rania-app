@@ -66,3 +66,15 @@ export interface TruthLevel2Payload {
 export interface Identity {
   id: string;
 }
+
+export interface DeepTruthPayload {
+  momentId: string;
+  identity: {
+    guestId?: string;
+    authUserId?: string | null;
+  };
+
+  // NEW: for paid flow
+  paymentReference?: string;   // Paystack reference
+  skipPaymentCheck?: boolean;  // true = trust the reference, don't re-charge
+}
