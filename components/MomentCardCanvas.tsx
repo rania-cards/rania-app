@@ -30,22 +30,20 @@ export function MomentCardCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Background gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, "#020617"); // slate-950
-    gradient.addColorStop(0.4, "#0f172a"); // slate-900
-    gradient.addColorStop(1, "#020617");
-    ctx.fillStyle = gradient;
+    // -------------------------
+    // RANIA BACKGROUND GRADIENT
+    // -------------------------
+    const bg = ctx.createLinearGradient(0, 0, 0, height);
+    bg.addColorStop(0, "#0f0a1f");
+    bg.addColorStop(0.25, "#3b0a65");
+    bg.addColorStop(0.55, "#b90073");
+    bg.addColorStop(0.85, "#00c3ff");
+    bg.addColorStop(1, "#0f0a1f");
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
-    const roundRect = (
-      x: number,
-      y: number,
-      w: number,
-      h: number,
-      r: number
-    ) => {
-      if (!ctx) return;
+    // Rounded rectangle helper
+    const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
       ctx.beginPath();
       ctx.moveTo(x + r, y);
       ctx.lineTo(x + w - r, y);
@@ -59,6 +57,7 @@ export function MomentCardCanvas({
       ctx.closePath();
     };
 
+    // Text wrapping helper
     const drawWrappedText = (
       text: string,
       x: number,
@@ -66,16 +65,14 @@ export function MomentCardCanvas({
       maxWidth: number,
       lineHeight: number
     ) => {
-      if (!ctx) return y;
-
       const words = text.split(" ");
       let line = "";
       let curY = y;
 
       for (let n = 0; n < words.length; n++) {
         const testLine = line + words[n] + " ";
-        const metrics = ctx.measureText(testLine);
-        const testWidth = metrics.width;
+        const testWidth = ctx.measureText(testLine).width;
+
         if (testWidth > maxWidth && n > 0) {
           ctx.fillText(line, x, curY);
           line = words[n] + " ";
@@ -84,111 +81,135 @@ export function MomentCardCanvas({
           line = testLine;
         }
       }
-      if (line) {
-        ctx.fillText(line, x, curY);
-      }
+
+      ctx.fillText(line, x, curY);
       return curY + lineHeight;
     };
 
-    // Top tag
-    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
-    roundRect(32, 40, 170, 38, 19);
+    // -------------------------
+    // TOP TAG
+    // -------------------------
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    roundRect(32, 40, 190, 40, 18);
     ctx.fill();
-    ctx.font =
-      "bold 16px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "#a7f3d0";
-    ctx.fillText("RANIA Moment", 48, 63);
 
-    // Main card
+    const tagG = ctx.createLinearGradient(32, 0, 200, 0);
+    tagG.addColorStop(0, "#a855f7");
+    tagG.addColorStop(0.5, "#ec4899");
+    tagG.addColorStop(1, "#22d3ee");
+
+    ctx.font = "bold 18px system-ui";
+    ctx.fillStyle = tagG;
+    ctx.fillText("RANIA Moment", 48, 67);
+
+    // -------------------------
+    // CARD (Glass)
+    // -------------------------
     const cardX = 32;
     const cardY = 100;
     const cardW = width - 64;
     const cardH = height - 220;
 
-    ctx.fillStyle = "rgba(15, 23, 42, 0.96)";
-    roundRect(cardX, cardY, cardW, cardH, 28);
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    roundRect(cardX, cardY, cardW, cardH, 26);
     ctx.fill();
 
     const innerX = cardX + 28;
     const innerW = cardW - 56;
+
     let curY = cardY + 60;
 
-    // Section: Teaser
-    ctx.font =
-      "bold 18px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "#a7f3d0";
+    // Helper for gradient section titles
+    const setTitleGradient = () => {
+      const g = ctx.createLinearGradient(innerX, 0, innerX + innerW, 0);
+      g.addColorStop(0, "#a855f7");
+      g.addColorStop(0.4, "#ec4899");
+      g.addColorStop(1, "#22d3ee");
+      ctx.fillStyle = g;
+    };
+
+    // -------------------------
+    // TEASER
+
+    ctx.font = "bold 22px system-ui";
+    setTitleGradient();
     ctx.fillText("Teaser", innerX, curY);
-    curY += 10;
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.6)";
-    ctx.lineWidth = 1;
+
+    curY += 34;
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.beginPath();
     ctx.moveTo(innerX, curY);
     ctx.lineTo(innerX + innerW, curY);
     ctx.stroke();
-    curY += 24;
+    curY += 28;
 
-    ctx.font =
-      "16px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "#e5e7eb";
-    curY = drawWrappedText(teaser, innerX, curY, innerW, 22);
-    curY += 24;
+    ctx.font = "18px system-ui";
+    ctx.fillStyle = "white";
+    curY = drawWrappedText(teaser, innerX, curY, innerW, 26);
 
-    // Section: Hidden truth
-    ctx.font =
-      "bold 18px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "#a7f3d0";
-    ctx.fillText("Hidden truth", innerX, curY);
-    curY += 10;
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.6)";
+    curY += 40;
+
+    // -------------------------
+    // HIDDEN TRUTH
+    // -------------------------
+    ctx.font = "bold 22px system-ui";
+    setTitleGradient();
+    ctx.fillText("Hidden Truth", innerX, curY);
+
+    curY += 34;
     ctx.beginPath();
     ctx.moveTo(innerX, curY);
     ctx.lineTo(innerX + innerW, curY);
     ctx.stroke();
-    curY += 24;
+    curY += 28;
 
-    ctx.font =
-      "16px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "#e5e7eb";
-    curY = drawWrappedText(hiddenText, innerX, curY, innerW, 22);
-    curY += 24;
+    ctx.font = "18px system-ui";
+    ctx.fillStyle = "white";
+    curY = drawWrappedText(hiddenText, innerX, curY, innerW, 26);
 
-    // Section: Their reply
-    ctx.font =
-      "bold 18px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "#facc15"; // amber-ish
-    ctx.fillText("Their reply", innerX, curY);
-    curY += 10;
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.6)";
+    curY += 40;
+
+    // -------------------------
+    // THEIR REPLY
+    // -------------------------
+    ctx.font = "bold 22px system-ui";
+    setTitleGradient();
+    ctx.fillText("Their Reply", innerX, curY);
+
+    curY += 34;
     ctx.beginPath();
     ctx.moveTo(innerX, curY);
     ctx.lineTo(innerX + innerW, curY);
     ctx.stroke();
-    curY += 24;
+    curY += 28;
 
-    ctx.font =
-      "16px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "#fef9c3";
-    curY = drawWrappedText(replyText, innerX, curY, innerW, 22);
+    ctx.font = "18px system-ui";
+    ctx.fillStyle = "#e0f7ff";
+    curY = drawWrappedText(replyText, innerX, curY, innerW, 26);
 
-    // Footer inside card
+    // -------------------------
+    // FOOTER INSIDE CARD
+    // -------------------------
     const footerY = cardY + cardH - 50;
-    ctx.font =
-      "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "rgba(148, 163, 184, 0.9)";
+    ctx.font = "12px system-ui";
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
     ctx.fillText("RANIA · emotional truth engine", innerX, footerY);
     ctx.fillText(shareUrl, innerX, footerY + 18);
 
-    // Bottom tag
-    ctx.font =
-      "11px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "rgba(148, 163, 184, 0.7)";
-    ctx.fillText("Generated after reply unlocked the truth", 32, height - 36);
+    // -------------------------
+    // BOTTOM FOOTER
+    // -------------------------
+    ctx.font = "11px system-ui";
+    setTitleGradient();
+    ctx.fillText("Generated with RANIA Deep Truth", 32, height - 34);
   }, [teaser, hiddenText, replyText, shareUrl]);
 
   const handleDownload = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
     setDownloading(true);
+
     try {
       const dataUrl = canvas.toDataURL("image/png");
       const link = document.createElement("a");
@@ -210,10 +231,11 @@ export function MomentCardCanvas({
           className="w-full h-auto rounded-lg border border-white/10"
         />
       </div>
+
       <button
         type="button"
         onClick={handleDownload}
-        className="rounded-full border border-emerald-400/60 px-3 py-1 text-[11px] text-emerald-300 hover:bg-emerald-400/10 disabled:opacity-60"
+        className="rounded-full border border-pink-400/60 px-3 py-1 text-[11px] text-pink-300 hover:bg-pink-400/10 disabled:opacity-60"
         disabled={downloading}
       >
         {downloading ? "Preparing card…" : "Download moment card (PNG)"}

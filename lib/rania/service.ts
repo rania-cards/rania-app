@@ -263,10 +263,10 @@ export async function createReply(payload: ReplyPayload) {
   const hiddenText: string = (moment as any).custom_hidden_text ?? "";
 
   // Mark completed
-  await supabaseAdmin
-    .from("rania_moments")
-    .update({ status: "completed", completed_at: new Date().toISOString() })
-    .eq("id", moment.id);
+await supabaseAdmin
+  .from("rania_moments")
+  .update({ status: "awaiting_reply" })
+  .eq("id", moment.id);
 
   return {
     replyId: reply.id as string,
@@ -342,4 +342,52 @@ export async function runTruthLevel2(payload: TruthLevel2Payload) {
   return {
     followupId: followup.id as string,
   };
+}
+
+export async function createReaction(input: {
+  momentId: string;
+  replyId: string;
+  reactionText: string;
+  identity: { guestId?: string; authUserId?: string | null };
+}) {
+  const identity = await ensureIdentity(input.identity);
+
+  if (!input.reactionText.trim()) {
+    throw new Error("Reaction cannot be empty");
+  }
+
+  // Update reply with reaction_text
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from("rania_replies")
+    .update({
+      reaction_text: input.reactionText.trim(),
+      has_reaction: true,
+    })
+    .eq("id", input.replyId)
+    .eq("moment_id", input.momentId)
+    .select("id")
+    .single();
+
+  if (updateError) throw updateError;
+  if (!updated) throw new Error("Reply not found for this moment");
+
+  // Mark moment as completed now
+  await supabaseAdmin
+    .from("rania_moments")
+    .update({
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", input.momentId);
+
+  // Log event
+  await supabaseAdmin.from("rania_events").insert({
+    identity_id: identity.id,
+    moment_id: input.momentId,
+    reply_id: input.replyId,
+    event_type: "reply_created",
+    properties: { type: "reaction" },
+  });
+
+  return { ok: true };
 }
