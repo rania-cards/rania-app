@@ -49,7 +49,7 @@ export default function RootLayout({
             <nav className="hidden md:flex items-center gap-6 text-sm text-white/60">
               <Link
               href="/moments/create"
-              className="block w-full px-6 py-3 rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-black 
+              className="block w-full px-6 py-3 rounded-full bg-linear-to-r from-purple-500 via-pink-500 to-cyan-400 text-black 
               font-bold text-sm shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all text-center"
              
             >

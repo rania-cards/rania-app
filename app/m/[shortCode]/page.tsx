@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react"
 import type React from "react"
 import Script from "next/script"
+import { DeepTruthCardCanvas } from "@/components/DeepTruthCardCanvas";
+import { MomentCardCanvas } from "@/components/MomentCardCanvas";
+
+
 
 import { useParams, useRouter } from "next/navigation"
 import { apiGetMoment, apiReplyToMoment, apiDeepTruth } from "@/lib/rania/client"
@@ -221,24 +225,25 @@ export default function MomentViewPage() {
         </div>
 
         {/* If reply already done, show revealed truth */}
-        {hiddenText && (
-          <div className="space-y-4 sm:space-y-6 animate-slide-in-up">
-            <div className="glass-dark rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-3 sm:space-y-4 border-purple-400/50 bg-gradient-to-br from-purple-500/20 via-black/50 to-black/50">
-              <div className="flex items-center gap-2 mb-3 sm:mb-4">
-                <span className="text-xl sm:text-2xl">🔓</span>
-                <h3 className="font-black text-xl sm:text-2xl bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">
-                  Truth Unlocked
-                </h3>
-              </div>
+      {hiddenText && moment && (
+  <div className="space-y-3 rounded-2xl border border-emerald-400/40 bg-black/50 p-3 text-xs">
+    <div className="text-[11px] font-semibold text-emerald-300 uppercase">
+      Hidden truth unlocked
+    </div>
+    <div className="text-sm whitespace-pre-wrap">{hiddenText}</div>
 
-              <div className="rounded-lg sm:rounded-2xl bg-slate-50 dark:bg-black/60 border border-slate-200 dark:border-white/15 p-4 sm:p-6 space-y-2 sm:space-y-3">
-                <p className="text-sm sm:text-lg leading-relaxed text-slate-900 dark:text-white whitespace-pre-wrap font-medium">
-                  {hiddenText}
-                </p>
-              </div>
-
-              <p className="text-[10px] sm:text-xs text-slate-600 dark:text-white/50 italic">This moment just became real. 💎</p>
-            </div>
+    {/* Static card for moment + reply */}
+    <div className="mt-3 border-t border-white/10 pt-2 space-y-2">
+      <div className="text-[11px] text-white/60">
+        Shareable card (moment + their reply)
+      </div>
+      <MomentCardCanvas
+        teaser={moment.teaserText}
+        hiddenText={hiddenText}
+        replyText={replyText || "[Their reply]"} // fallback if you want
+        shareUrl={`${baseUrl}/m/${moment.shortCode}`}
+      />
+    </div>
 
             {/* Deep truth optional analysis */}
             <div className="glass rounded-lg sm:rounded-2xl p-4 sm:p-6 space-y-3 sm:space-y-4">
@@ -279,13 +284,32 @@ export default function MomentViewPage() {
 
               {deepTruthError && <p className="text-xs sm:text-sm text-red-600 dark:text-red-300">{deepTruthError}</p>}
 
-              {deepTruth && (
-                <div className="rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/15 p-3 sm:p-4">
-                  <p className="text-xs sm:text-sm text-slate-700 dark:text-white/80 whitespace-pre-wrap leading-relaxed">
-                    {deepTruth}
-                  </p>
-                </div>
-              )}
+            {deepTruth && moment && (
+  <div className="space-y-3">
+    <div className="text-[11px] text-white/70">
+      Deep Truth analysis
+    </div>
+
+    {/* Old text view (optional - you can keep or remove) */}
+    <div className="text-[11px] text-white/80 whitespace-pre-wrap border border-white/15 rounded-md p-2 bg-black/40">
+      {deepTruth}
+    </div>
+
+    {/* Static card for screenshot / share */}
+    <div className="space-y-1">
+      <div className="text-[11px] text-white/60">
+        Deep Truth share card (for WhatsApp Status / groups)
+      </div>
+      <DeepTruthCardCanvas
+        teaser={moment.teaserText}
+        hiddenText={hiddenText ?? ""}
+        deepTruth={deepTruth}
+        shareUrl={`${baseUrl}/m/${moment.shortCode}`}
+      />
+    </div>
+  </div>
+)}
+
             </div>
 
             {/* Share back section */}
