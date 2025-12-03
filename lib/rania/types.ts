@@ -27,6 +27,8 @@ export interface CreateMomentPayload {
   // NEW: Paystack integration
   paymentReference?: string;   // from Paystack callback
   skipPaymentCheck?: boolean;  // if true, backend will trust paymentReference
+ senderName?: string;
+  senderPhone?: string; 
 
   identity: {
     guestId?: string;
@@ -78,3 +80,21 @@ export interface DeepTruthPayload {
   paymentReference?: string;   // Paystack reference
   skipPaymentCheck?: boolean;  // true = trust the reference, don't re-charge
 }
+
+
+export interface HiddenUnlockPayload {
+  momentId: string;
+  identity: {
+    guestId?: string;
+    authUserId?: string | null;
+  };
+  paymentReference: string;  // Paystack reference, required
+  skipPaymentCheck?: boolean; // true = we trust Paystack inline was successful
+}
+
+export interface AddHiddenMessagePayload {
+  momentId: string;
+  fullHiddenText: string;
+  unlockPriceKes?: number; // default 20 if not provided
+}
+

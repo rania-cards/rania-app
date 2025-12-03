@@ -2,10 +2,8 @@
 import type React from "react"
 import type { Metadata } from "next"
 
-
 import "./globals.css"
 import Link from "next/link"
-
 
 export const metadata: Metadata = {
   title: "RANIA · Emotional Truth Engine",
@@ -37,10 +35,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`font-sans antialiased bg-background text-foreground`}>
-        {/* <CHANGE> Added sticky header with glassmorphism */}
-        <header className="sticky top-0 z-50 glass border-b border-white/5">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+      <body className={`font-sans antialiased bg-background text-foreground w-screen overflow-x-hidden`}>
+        {/* Header */}
+        <header className="sticky top-0 z-50 glass border-b border-white/5 w-screen">
+          <div className="max-w-full px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Link href="/" className="text-2xl font-black bg-linear-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
                 ✨ RANIA
@@ -48,20 +46,18 @@ export default function RootLayout({
             </div>
             <nav className="hidden md:flex items-center gap-6 text-sm text-white/60">
               <Link
-              href="/moments/create"
-              className="block w-full px-6 py-3 rounded-full bg-linear-to-r from-purple-500 via-pink-500 to-cyan-400 text-black 
-              font-bold text-sm shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all text-center"
-             
-            >
-              Create Moment
-            </Link>
+                href="/moments/create"
+                className="block px-6 py-3 rounded-full bg-linear-to-r from-purple-500 via-pink-500 to-cyan-400 text-black font-bold text-sm shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all text-center"
+              >
+                Create Moment
+              </Link>
             </nav>
           </div>
         </header>
 
-        {/* Main content */}
-        <main className="min-h-screen">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</div>
+        {/* Main content - NO padding wrapper */}
+        <main className="min-h-screen w-screen overflow-x-hidden">
+          {children}
         </main>
 
         {/* Background decoration */}
@@ -70,8 +66,6 @@ export default function RootLayout({
           <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl" />
           <div className="absolute bottom-0 left-1/2 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl" />
         </div>
-
-      
       </body>
     </html>
   )

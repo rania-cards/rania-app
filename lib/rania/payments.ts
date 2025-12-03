@@ -4,6 +4,8 @@ import { supabaseAdmin } from "../supabaseServer";
 const PREMIUM_REVEAL_CODE = "PREMIUM_REVEAL";
 const DEEP_TRUTH_CODE = "DEEP_TRUTH";
 const TRUTH_L2_CODE = "TRUTH_L2";
+export const HIDDEN_UNLOCK_CODE = "HIDDEN_UNLOCK";
+
 // ...
 
 export async function ensurePricingOption(code: string) {

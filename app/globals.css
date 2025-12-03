@@ -44,10 +44,20 @@
     @apply border-border;
   }
 
-  body {
-    @apply bg-background text-foreground;
-    font-family: Arial, Helvetica, sans-serif;
-  }
+ body {
+  @apply text-foreground;
+  font-family: Arial, Helvetica, sans-serif;
+
+  /* Your dark gradient for both modes */
+  background: linear-gradient(
+    to bottom,
+    #020617, /* slate-950 */
+    #3b0764, /* purple-950 */
+    #020617  /* slate-950 */
+  );
+  background-attachment: fixed;
+}
+
 
   /* Light mode text visibility fixes */
   @media (prefers-color-scheme: light) {
