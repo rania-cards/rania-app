@@ -343,57 +343,7 @@ export default function HomePage() {
       </section>
 
       {/* WHY RANIA SECTION */}
-      <section className="w-full py-24 border-t border-white/5">
-        <div className="px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
-            variants={staggerContainer}
-            className="space-y-12"
-          >
-            <motion.div variants={fadeUp(0)} className="text-center space-y-3">
-              <h2 className="text-3xl sm:text-4xl font-black">
-                Why not just use Canva or CapCut?
-              </h2>
-            </motion.div>
-
-            <motion.div variants={staggerContainer} className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[
-                {
-                  icon: Zap,
-                  title: 'RANIA is interactive',
-                  desc: 'Most tools give you static cards. RANIA is back-and-forth: teaser → reply → hidden truth → reaction.',
-                },
-                {
-                  icon: MessageSquare,
-                  title: 'RANIA is emotional',
-                  desc: 'No generic quotes. Everything is built around real tension and honest reactions.',
-                },
-              
-              ].map((item, i) => {
-                const Icon = item.icon;
-                return (
-                  <motion.div
-                    key={i}
-                    variants={scaleIn(i * 0.1)}
-                    className="p-6 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-sm group hover:border-cyan-400/50 hover:bg-cyan-500/5 transition-all duration-300"
-                  >
-                    <motion.div
-                      whileHover={{ scale: 1.1, rotate: 10 }}
-                      className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500/20 to-cyan-500/20 flex items-center justify-center mb-4"
-                    >
-                      <Icon size={24} className="text-cyan-400" />
-                    </motion.div>
-                    <h3 className="font-bold text-slate-50 mb-2">{item.title}</h3>
-                    <p className="text-sm text-slate-300">{item.desc}</p>
-                  </motion.div>
-                );
-              })}
-            </motion.div>
-          </motion.div>
-        </div>
-      </section>
+     
 
       {/* FINAL CTA SECTION */}
       <section className="w-full py-24 border-t border-white/5">

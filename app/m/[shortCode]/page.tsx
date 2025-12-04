@@ -392,9 +392,10 @@ export default function MomentViewPage() {
 
           <div className="rounded-2xl bg-slate-950/80 border border-slate-800 p-4 sm:p-6">
             <p className="text-xs sm:text-sm text-slate-200">
-              💭 They sent you a teaser. First, reply (free). When they write a hidden truth, you&apos;ll see a masked preview
-              like <span className="font-mono text-pink-300">&quot;I ...................&quot;</span>.
-              To see the full sentence, you can unlock it for KES 20.
+             💭 They sent you a teaser. Reply first.
+When they write a hidden truth, you’ll see a masked preview like
+<span className="font-mono text-pink-300">&quot;I ………………&quot;</span>.
+To see the full sentence, you can unlock it.
             </p>
           </div>
         </div>
