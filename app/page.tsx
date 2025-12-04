@@ -373,12 +373,14 @@ export default function HomePage() {
                   Sender . First reply . unlock truth.
                 </p>
               </div>
+
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className="px-8 py-3.5 rounded-full bg-slate-950 text-white font-bold text-sm hover:bg-slate-800 transition whitespace-nowrap"
               >
-                Start RANIA now →
+                <Link href='/moments/create'>Start RANIA now →</Link>
+                
               </motion.button>
             </div>
           </motion.div>
