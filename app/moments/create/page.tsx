@@ -153,8 +153,8 @@ export default function CreateMomentPage() {
               </span>
             </h1>
             <p className="text-sm sm:text-base text-slate-200/80 max-w-2xl">
-              Sender is free. You send a teaser. They reply free. After their reply, you come back to write the hidden
-              truth they&apos;ll unlock for KES 20.
+              You send a teaser. They reply . After their reply, you come back to write the hidden
+              truth they&apos;ll unlock 
             </p>
           </motion.div>
 
@@ -218,7 +218,7 @@ export default function CreateMomentPage() {
                   <input
                     value={senderName}
                     onChange={(e) => setSenderName(e.target.value)}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900/50 px-2 py-1.5 text-xs focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
+                    className="w-full rounded-lg border text-slate-50 border-slate-700 bg-slate-900/50 px-2 py-1.5 text-xs focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
                     placeholder="e.g. Abdullahi"
                   />
                 </div>
@@ -229,7 +229,7 @@ export default function CreateMomentPage() {
                   <input
                     value={senderPhone}
                     onChange={(e) => setSenderPhone(e.target.value)}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900/50 px-2 py-1.5 text-xs focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
+                    className="w-full rounded-lg border border-slate-700 text-slate-50 bg-slate-900/50 px-2 py-1.5 text-xs focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
                     placeholder="+2547XXXXXXXX"
                   />
                 </div>
@@ -245,7 +245,7 @@ export default function CreateMomentPage() {
                 <h3 className="font-bold text-slate-100 text-xs sm:text-sm">
                   Customize Your Vibe
                 </h3>
-                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 text-slate-50">
                   {[
                     { label: "Language", options: LANG_OPTIONS, state: language, setState: setLanguage },
                     { label: "Tone", options: TONE_OPTIONS, state: tone, setState: setTone },
@@ -258,7 +258,7 @@ export default function CreateMomentPage() {
                       <select
                         value={group.state}
                         onChange={(e) => group.setState(e.target.value as any)}
-                        className="w-full rounded-lg bg-slate-950/50 border border-slate-600 px-2 py-1.5 sm:px-3 sm:py-2 text-[10px] sm:text-xs font-medium focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
+                        className="w-full rounded-lg bg-slate-950/50 border text-slate-50 border-slate-600 px-2 py-1.5 sm:px-3 sm:py-2 text-[10px] sm:text-xs font-medium focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
                       >
                         {group.options.map((opt: any) => (
                           <option key={opt.value} value={opt.value}>
@@ -312,9 +312,7 @@ export default function CreateMomentPage() {
                 {creating ? "⏳ Creating…" : "✨ Create Free Moment"}
               </motion.button>
 
-              <p className="text-[10px] sm:text-xs text-slate-400 text-center">
-                Sender is free. Receiver replies & reacts free. They only pay when they choose to unlock your full hidden truth (KES 20).
-              </p>
+             
             </motion.form>
 
             {/* inset-inline-end: preview & caption */}
@@ -335,7 +333,7 @@ export default function CreateMomentPage() {
                     </span>
                   </div>
                   <span className="text-[10px] sm:text-xs font-medium px-2 sm:px-3 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-100">
-                    🆓 Sender Free
+                    🆓 Sender 
                   </span>
                 </div>
 
@@ -352,7 +350,7 @@ export default function CreateMomentPage() {
                 </div>
 
                 <p className="text-[10px] sm:text-xs text-slate-400 italic">
-                  This is what they see in WhatsApp. After they reply, you&apos;ll write the hidden truth that unlocks for KES 20.
+                  This is what they see in WhatsApp. After they reply, you&apos;ll write the hidden truth that they have to unlock.
                 </p>
               </div>
 

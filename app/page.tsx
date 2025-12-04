@@ -2,6 +2,7 @@
 "use client"
 import { motion, Variants } from 'framer-motion';
 import { ChevronDown, Zap, MessageSquare, Lock, Sparkles } from 'lucide-react';
+import Link from 'next/link';
 
 const fadeUp = (delay = 0): Variants => ({
   hidden: { opacity: 0, y: 30 },
@@ -126,7 +127,7 @@ export default function HomePage() {
                 variants={fadeUp(0.3)}
                 className="text-sm sm:text-base text-slate-300 max-w-xl leading-relaxed"
               >
-                RANIA is a WhatsApp-first emotional game. You send a teaser (free) → they reply (free) → you drop the full hidden truth. They see the preview and can unlock the full message for{' '}
+                RANIA is a WhatsApp-first emotional game. You send a teaser  → they reply  → you drop the full hidden truth. They see the preview and can unlock the full message for{' '}
                 <span className="font-bold text-pink-300">KES 20</span>.
               </motion.p>
 
@@ -135,13 +136,15 @@ export default function HomePage() {
                 variants={fadeUp(0.4)}
                 className="flex flex-col sm:flex-row gap-4 pt-4"
               >
-                <motion.button
-                  whileHover={{ scale: 1.05, boxShadow: '0 20px 40px rgba(168, 85, 247, 0.4)' }}
-                  whileTap={{ scale: 0.95 }}
+                <Link
+                  href="/moments/create"
                   className="px-6 sm:px-8 py-3 rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-sm sm:text-base shadow-lg hover:shadow-xl transition"
                 >
-                  Start your free moment
-                </motion.button>
+                  
+                   Start your free moment
+                  
+                 
+                </Link>
                 <motion.button
                   whileHover={{ scale: 1.05, backgroundColor: 'rgba(255, 255, 255, 0.15)' }}
                   whileTap={{ scale: 0.95 }}
@@ -158,8 +161,7 @@ export default function HomePage() {
                 className="flex flex-col gap-3 pt-4"
               >
                 {[
-                  '🔓 Hidden truth unlock @ KES 20',
-                  '🆓 Sender & first reply are free',
+                  
                   '📲 Built for WhatsApp & Gen Z',
                 ].map((feature, i) => (
                   <motion.div
@@ -180,9 +182,9 @@ export default function HomePage() {
             <motion.div variants={slideInRight(0.2)} className="relative h-96 sm:h-full">
               <div className="relative w-full h-full">
                 {[
-                  { step: 1, title: 'Teaser · Free', text: '"There\'s something I\'ve wanted to tell you…"', color: 'from-purple-500/20 to-purple-600/20', border: 'border-purple-400/40', delay: 0 },
-                  { step: 2, title: '💬 Their reply · Free', text: '"Okay, now I\'m curious. What is it?"', color: 'from-pink-500/20 to-pink-600/20', border: 'border-pink-400/40', delay: 0.1 },
-                  { step: 3, title: '🔒 Hidden truth · KES 20', text: '"I miss you more than I let you see…"', color: 'from-cyan-500/20 to-cyan-600/20', border: 'border-cyan-400/40', delay: 0.2 },
+                  { step: 1, title: 'Teaser ', text: '"There\'s something I\'ve wanted to tell you…"', color: 'from-purple-500/20 to-purple-600/20', border: 'border-purple-400/40', delay: 0 },
+                  { step: 2, title: '💬 Their reply ', text: '"Okay, now I\'m curious. What is it?"', color: 'from-pink-500/20 to-pink-600/20', border: 'border-pink-400/40', delay: 0.1 },
+                  { step: 3, title: '🔒 Hidden truth ', text: '"I miss you more than I let you see…"', color: 'from-cyan-500/20 to-cyan-600/20', border: 'border-cyan-400/40', delay: 0.2 },
                 ].map((card, i) => (
                   <motion.div
                     key={i}
@@ -202,7 +204,7 @@ export default function HomePage() {
                     <p className="text-xs text-slate-300">
                       {i === 0 && 'They see this in WhatsApp and reply for free.'}
                       {i === 1 && 'You get a WhatsApp notification with their reply.'}
-                      {i === 2 && 'They tap "Unlock full truth – KES 20" to read everything.'}
+                      {i === 2 && 'They tap "Unlock full truth " to read everything.'}
                     </p>
                   </motion.div>
                 ))}
@@ -238,10 +240,10 @@ export default function HomePage() {
               className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
             >
               {[
-                { num: '1', title: 'Sender drops a teaser (free)', desc: 'Write a short teaser that hints at your real feelings. No payment. Just tension.' },
-                { num: '2', title: 'Receiver replies (free)', desc: 'They open the link from WhatsApp and reply honestly. Still free.' },
+                { num: '1', title: 'Sender drops a teaser ', desc: 'Write a short teaser that hints at your real feelings. No payment. Just tension.' },
+                { num: '2', title: 'Receiver replies ', desc: 'They open the link from WhatsApp and reply honestly. Still free.' },
                 { num: '3', title: 'You write the hidden truth', desc: 'After their reply, see what they said and write the full hidden message.' },
-                { num: '4', title: 'They see preview & unlock (KES 20)', desc: 'They see half your truth as a preview. Tap "Unlock full truth – KES 20".' },
+                { num: '4', title: 'They see preview & unlock ', desc: 'They see half your truth as a preview. Tap "Unlock full truth".' },
                 { num: '5', title: 'Reaction + Deep Truth', desc: 'After reading, they react. Optional: AI Deep Breakdown. Screenshot-perfect cards.' },
               ].map((step, i) => (
                 <motion.div
@@ -318,9 +320,9 @@ export default function HomePage() {
 
                   {[
                     { label: 'Teaser', value: ex.teaser },
-                    { label: 'Their Reply (free)', value: ex.reply },
-                    { label: 'Hidden preview (before unlock)', value: ex.preview },
-                    { label: 'Full truth (after KES 20 unlock)', value: ex.full },
+                    { label: 'Their Reply ', value: ex.reply },
+                    { label: 'Hidden preview ', value: ex.preview },
+                    { label: 'Full truth ', value: ex.full },
                   ].map((item, j) => (
                     <motion.div
                       key={j}
@@ -368,11 +370,7 @@ export default function HomePage() {
                   title: 'RANIA is emotional',
                   desc: 'No generic quotes. Everything is built around real tension and honest reactions.',
                 },
-                {
-                  icon: Lock,
-                  title: 'Built for East Africa',
-                  desc: 'Pricing in KES, flows tuned for WhatsApp, language modes for Kenyan Gen Z.',
-                },
+              
               ].map((item, i) => {
                 const Icon = item.icon;
                 return (
@@ -422,7 +420,7 @@ export default function HomePage() {
                   Ready to drop your first truth?
                 </h2>
                 <p className="text-sm text-slate-900/80 max-w-md">
-                  Sender is free. First reply is free. You only pay when they decide your hidden truth is worth unlocking.
+                  Sender . First reply . unlock truth.
                 </p>
               </div>
               <motion.button
