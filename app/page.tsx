@@ -127,7 +127,7 @@ export default function HomePage() {
                 variants={fadeUp(0.3)}
                 className="text-sm sm:text-base text-slate-300 max-w-xl leading-relaxed"
               >
-                RANIA is a WhatsApp-first emotional game. You send a teaser  → they reply  → you drop the full hidden truth. They see the preview and can unlock the full message for{' '}
+                RANIA is a WhatsApp-first emotional game. You send a teaser  → they reply  → you drop the full hidden truth. They see the preview and can unlock the full message.
           
               </motion.p>
 
