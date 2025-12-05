@@ -29,6 +29,7 @@ export interface CreateMomentPayload {
   skipPaymentCheck?: boolean;  // if true, backend will trust paymentReference
  senderName?: string;
   senderPhone?: string; 
+  senderEmail?:string;
 
   identity: {
     guestId?: string;

@@ -510,14 +510,16 @@ export async function createReaction(input: {
 export async function runDeepTruth(payload: DeepTruthPayload) {
   const identity = await ensureIdentity(payload.identity);
 
+  // 1. Charge or record Deep Truth purchase
   await chargeOrUsePass({
     identityId: identity.id,
     pricingCode: DEEP_TRUTH_CODE,
     momentId: payload.momentId,
     paymentReference: payload.paymentReference,
-    skipPayment: payload.skipPaymentCheck ?? false,
+    skipPayment: payload.skipPaymentCheck ?? false, // true when Paystack inline already succeeded
   });
 
+  // 2. Fetch moment so we know who to notify
   const { data: fullMoment, error: fullMomentError } = await supabaseAdmin
     .from("rania_moments")
     .select("id, short_code, sender_phone, sender_name")
@@ -526,6 +528,8 @@ export async function runDeepTruth(payload: DeepTruthPayload) {
 
   if (fullMomentError) throw fullMomentError;
 
+  // 3. Notify sender via AiSensy direct API (optional but powerful)
+  // "Hey, someone ran a Deep Breakdown on your moment"
   if (fullMoment?.sender_phone) {
     await notifySender({
       phone: fullMoment.sender_phone,
@@ -533,10 +537,12 @@ export async function runDeepTruth(payload: DeepTruthPayload) {
       event: "deep_truth",
       shortCode: fullMoment.short_code,
     });
-  }
+   }
 
+  // 4. Generate Deep Truth text via OpenAI
   const deepTruthText = await generateDeepTruthForMoment(payload.momentId);
 
+  // 5. Log event
   await supabaseAdmin.from("rania_events").insert({
     identity_id: identity.id,
     moment_id: payload.momentId,

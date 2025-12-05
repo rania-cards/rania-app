@@ -42,12 +42,18 @@ type MomentData = {
   hiddenUnlockPriceKes?: number;
 };
 
+type ReplyRow = {
+  id: string;
+  reply_text: string;
+  reaction_text: string | null;
+  created_at: string;
+};
+
 function maskPreview(full: string): string {
   const trimmed = full.trim();
   if (!trimmed) return "";
   const words = trimmed.split(/\s+/);
   const first = words[0] || "";
-  // I ......................
   return `${first} ${".".repeat(26)}`;
 }
 
@@ -71,8 +77,9 @@ export default function MomentViewPage() {
   const [hiddenFullText, setHiddenFullText] = useState<string | null>(null);
   const [unlockingHidden, setUnlockingHidden] = useState(false);
 
-  // Reaction to full hidden truth
+  // Reaction
   const [reactionText, setReactionText] = useState("");
+  const [finalReactionText, setFinalReactionText] = useState("");
   const [submittingReaction, setSubmittingReaction] = useState(false);
   const [reactionSent, setReactionSent] = useState(false);
 
@@ -96,6 +103,7 @@ export default function MomentViewPage() {
       ? process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "KES"
       : "KES";
 
+  // Load moment + replies
   useEffect(() => {
     let cancel = false;
 
@@ -104,13 +112,47 @@ export default function MomentViewPage() {
       setLoading(true);
       setLoadError(null);
       try {
+        // 1) Load moment
         const res = await apiGetMoment(shortCode);
-        if (!cancel) {
-          const m = res.moment as any as MomentData;
-          setMoment(m);
-          if (m.status === "awaiting_reply" || m.status === "completed") {
-            setHasReplied(true);
+        if (cancel) return;
+
+        const m = res.moment as any as MomentData;
+        setMoment(m);
+
+        // Determine replied state by status
+        const statusHasReply =
+          m.status === "awaiting_reply" || m.status === "completed";
+
+        // 2) If status suggests reply exists, load replies to get replyId
+        if (statusHasReply) {
+          try {
+            const r = await fetch(
+              `/api/rania/moments/by-code/${shortCode}/replies`,
+              { method: "GET" },
+            );
+            const json = await r.json();
+            if (!cancel && json.success && Array.isArray(json.replies) && json.replies.length > 0) {
+              const replies = json.replies as ReplyRow[];
+              // use the latest reply
+              const latest = replies[replies.length - 1];
+              setReplyId(latest.id);
+              setHasReplied(true);
+              // if reaction already exists in DB, you could set finalReactionText here
+              if (latest.reaction_text) {
+                setFinalReactionText(latest.reaction_text);
+                setReactionSent(true);
+              }
+            } else if (!cancel) {
+              // no replies despite status
+              setHasReplied(false);
+              setReplyId(null);
+            }
+          } catch (err) {
+            console.warn("[MomentViewPage] Failed to load replies:", err);
           }
+        } else {
+          setHasReplied(false);
+          setReplyId(null);
         }
       } catch (err: any) {
         if (!cancel) setLoadError(err.message ?? "Failed to load moment");
@@ -144,7 +186,7 @@ export default function MomentViewPage() {
       setReplyId(res.replyId);
       setReplyText("");
       setHasReplied(true);
-      // DO NOT use res.hiddenText in the UI; hidden truth only comes via preview/full unlock
+      // hiddenText from res is ignored in this flow
     } catch (err: any) {
       alert(err.message ?? "Failed to submit reply");
     } finally {
@@ -154,7 +196,12 @@ export default function MomentViewPage() {
 
   async function handleReactionSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!moment || !replyId) return;
+    if (!moment) return;
+    if (!replyId) {
+      console.warn("[handleReactionSubmit] Missing replyId; reaction cannot be sent.");
+      alert("We could not link your reaction to the conversation. Please refresh and try again.");
+      return;
+    }
     if (!reactionText.trim()) {
       alert("Reaction cannot be empty.");
       return;
@@ -162,6 +209,8 @@ export default function MomentViewPage() {
 
     setSubmittingReaction(true);
     try {
+      const textToSave = reactionText.trim();
+
       const res = await fetch(`/api/rania/moments/${moment.id}/reaction`, {
         method: "POST",
         headers: {
@@ -173,7 +222,7 @@ export default function MomentViewPage() {
         },
         body: JSON.stringify({
           replyId,
-          reactionText: reactionText.trim(),
+          reactionText: textToSave,
           identity: {},
         }),
       });
@@ -183,6 +232,7 @@ export default function MomentViewPage() {
         throw new Error(json.error || "Failed to send reaction");
       }
 
+      setFinalReactionText(textToSave);
       setReactionText("");
       setReactionSent(true);
     } catch (err: any) {
@@ -323,7 +373,7 @@ export default function MomentViewPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]  bg-gradient-to-b from-slate-950 via-purple-950 to-slate-950 relative">
+      <div className="flex items-center justify-center min-h-[400px] bg-gradient-to-b from-slate-950 via-purple-950 to-slate-950 relative">
         <div className="text-center space-y-3">
           <div className="text-4xl animate-bounce">✨</div>
           <p className="text-pink-500/70">Loading this moment…</p>
@@ -334,7 +384,7 @@ export default function MomentViewPage() {
 
   if (loadError || !moment) {
     return (
-      <div className="glass rounded-xl sm:rounded-2xl p-6 sm:p-8 max-w-md mx-auto space-y-4 text-center   bg-gradient-to-b from-slate-950 via-purple-950 to-slate-950 relative">
+      <div className="glass rounded-xl sm:rounded-2xl p-6 sm:p-8 max-w-md mx-auto space-y-4 text-center bg-gradient-to-b from-slate-950 via-purple-950 to-slate-950 relative">
         <div className="text-4xl">😕</div>
         <p className="text-pink-600 font-medium">
           Could not load this RANIA moment.
@@ -358,7 +408,6 @@ export default function MomentViewPage() {
   const hasHiddenPreview = !!moment.hiddenPreview;
   const hasFullHidden = !!hiddenFullText;
 
-  // PHASES
   const phaseReply = !hasReplied;
   const phaseAwaitingHidden =
     hasReplied && !hasHiddenPreview && !hasFullHidden;
@@ -366,19 +415,20 @@ export default function MomentViewPage() {
     hasReplied && hasHiddenPreview && !hasFullHidden;
   const phaseFullHidden = hasReplied && hasFullHidden;
 
-  // For display:
   const previewMasked =
     hasHiddenPreview && moment.hiddenPreview
       ? maskPreview(moment.hiddenPreview)
       : "";
 
   const fullHiddenText = hiddenFullText ?? "";
+  const finalReplyForCard =
+    finalReactionText || (reactionSent ? "[Reaction sent]" : "[Their reaction]");
 
   return (
     <>
       <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
 
-      <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 px-4 sm:px-0   bg-gradient-to-b from-slate-950 via-purple-950 to-slate-950 relative">
+      <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 px-4 sm:px-0 bg-gradient-to-b from-slate-950 via-purple-950 to-slate-950 relative">
         {/* HEADER */}
         <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-4 sm:space-y-6 bg-gradient-to-br from-purple-500/10 via-pink-500/10 to-cyan-500/10 border border-purple-400/40">
           <div className="space-y-2 sm:space-y-3">
@@ -392,10 +442,8 @@ export default function MomentViewPage() {
 
           <div className="rounded-2xl bg-slate-950/80 border border-slate-800 p-4 sm:p-6">
             <p className="text-xs sm:text-sm text-slate-200">
-             💭 They sent you a teaser. Reply first.
-When they write a hidden truth, you’ll see a masked preview like
-<span className="font-mono text-pink-300">&quot;I ………………&quot;</span>.
-To see the full sentence, you can unlock it.
+              💭 They sent you a teaser. Reply first. When they write a hidden truth, you’ll see a masked preview like{" "}
+              <span className="font-mono text-pink-300">&quot;I ………………&quot;</span>. To see the full sentence, you can unlock it.
             </p>
           </div>
         </div>
@@ -447,8 +495,7 @@ To see the full sentence, you can unlock it.
               </button>
 
               <p className="text-[10px] sm:text-xs text-slate-300 text-center">
-                After you reply, RANIA notifies them via WhatsApp. They will log in, see your reply, and write a hidden
-                truth for you.
+                After you reply, RANIA notifies them. They will log in, see your reply, and write a hidden truth for you.
               </p>
             </div>
           </div>
@@ -527,7 +574,7 @@ To see the full sentence, you can unlock it.
               <div className="space-y-2 border-t border-purple-400/40 pt-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-pink-100">
-                    Shareable card (moment + reaction)
+                    Conversation card (you or the sender can download)
                   </span>
                   <button
                     type="button"
@@ -541,10 +588,13 @@ To see the full sentence, you can unlock it.
                   <MomentCardCanvas
                     teaser={moment.teaserText}
                     hiddenText={fullHiddenText}
-                    replyText={reactionText || "[Their reaction]"}
+                    replyText={finalReplyForCard}
                     shareUrl={`${baseUrl}/m/${moment.shortCode}`}
                   />
                 )}
+                <p className="text-[10px] text-slate-300">
+                  Tip: If you&apos;re the sender, you can open this page and download the card as proof of the whole moment.
+                </p>
               </div>
             )}
 
@@ -615,7 +665,7 @@ To see the full sentence, you can unlock it.
                     {showDeepTruthCard && (
                       <DeepTruthCardCanvas
                         teaser={moment.teaserText}
-                        hiddenText={fullHiddenText }
+                        hiddenText={fullHiddenText || previewMasked}
                         deepTruth={deepTruth}
                         shareUrl={`${baseUrl}/m/${moment.shortCode}`}
                       />
