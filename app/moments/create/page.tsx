@@ -1,10 +1,10 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect } from "react";
 import type React from "react";
-import { motion } from "framer-motion";
+import Script from "next/script";
+import { useRouter } from "next/navigation";
 
 import { apiCreateMoment } from "@/lib/rania/client";
 import type {
@@ -13,6 +13,23 @@ import type {
   RaniaTone,
   RaniaDeliveryFormat,
 } from "@/lib/rania/types";
+
+declare global {
+  interface Window {
+    PaystackPop: {
+      setup(options: {
+        key: string;
+        email: string;
+        amount: number;
+        currency?: string;
+        ref?: string;
+        metadata?: any;
+        callback: (response: { reference: string }) => void;
+        onClose: () => void;
+      }): { openIframe: () => void };
+    };
+  }
+}
 
 const MODES: { key: RaniaModeKey; label: string; description: string; emoji: string }[] = [
   { key: "CRUSH_REVEAL", label: "Crush Reveal", description: "Say what you admire but never said.", emoji: "💕" },
@@ -41,29 +58,33 @@ const DELIVERY_OPTIONS: { value: RaniaDeliveryFormat; label: string }[] = [
   { value: "motion", label: "Motion (coming)" },
 ];
 
+const POLISH_PRICE_KES = 20;
+
 export default function CreateMomentPage() {
+  const router = useRouter();
+
   const [modeKey, setModeKey] = useState<RaniaModeKey>("BESTIE_TRUTH_CHAIN");
   const [language, setLanguage] = useState<RaniaLanguage>("en");
   const [tone, setTone] = useState<RaniaTone>("soft");
   const [deliveryFormat, setDeliveryFormat] = useState<RaniaDeliveryFormat>("still");
 
   const [teaserText, setTeaserText] = useState<string>("Real talk time… reply first.");
+  const [hiddenText, setHiddenText] = useState<string>(
+    "I appreciate you more than I show, even when I'm distant.",
+  );
+
   const [senderName, setSenderName] = useState("");
   const [senderPhone, setSenderPhone] = useState("");
+  const [senderEmail, setSenderEmail] = useState("");
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shortCode, setShortCode] = useState<string | null>(null);
   const [momentId, setMomentId] = useState<string | null>(null);
 
-
-  function handleShareWhatsApp() {
-    if (!caption) return;
-    const url = `https://wa.me/?text=${encodeURIComponent(caption)}`;
-    if (typeof window !== "undefined") {
-      window.open(url, "_blank");
-    }
-  }
+  const [polishingField, setPolishingField] = useState<"teaser" | "hidden" | null>(null);
+  const [polishing, setPolishing] = useState(false);
+  const [polishError, setPolishError] = useState<string | null>(null);
 
   const baseUrl =
     typeof window !== "undefined"
@@ -75,11 +96,20 @@ export default function CreateMomentPage() {
     ? `Reply here and complete the moment: ${momentUrl}`
     : "";
 
+  const paystackKey =
+    typeof window !== "undefined"
+      ? process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ?? ""
+      : "";
+  const currency =
+    typeof window !== "undefined"
+      ? process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "KES"
+      : "KES";
+
   useEffect(() => {
-    setShortCode(shortCode);
-    setMomentId(momentId);
+    setShortCode(null);
+    setMomentId(null);
     setError(null);
-  }, [modeKey, teaserText, language, tone]);
+  }, [modeKey, teaserText, hiddenText, language, tone]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,6 +117,10 @@ export default function CreateMomentPage() {
 
     if (!teaserText.trim()) {
       setError("Teaser cannot be empty.");
+      return;
+    }
+    if (!hiddenText.trim()) {
+      setError("Hidden message cannot be empty.");
       return;
     }
 
@@ -100,10 +134,11 @@ export default function CreateMomentPage() {
         teaserSnippetId: undefined,
         hiddenSnippetId: undefined,
         customTeaserText: teaserText.trim(),
-        customHiddenText: undefined,
+        customHiddenText: hiddenText.trim(),
         premiumReveal: false,
         senderName: senderName.trim() || undefined,
         senderPhone: senderPhone.trim() || undefined,
+        senderEmail: senderEmail.trim() || undefined,
         identity: {},
       });
 
@@ -116,149 +151,203 @@ export default function CreateMomentPage() {
     }
   }
 
+  async function callPolishAPI(field: "teaser" | "hidden", text: string) {
+    setPolishing(true);
+    setPolishError(null);
+    try {
+      const res = await fetch("/api/rania/polish-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          field,
+          text,
+          modeKey,
+          tone,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || "Failed to polish text");
+      }
+
+      if (field === "teaser") {
+        setTeaserText(json.polished);
+      } else {
+        setHiddenText(json.polished);
+      }
+    } catch (err: any) {
+      setPolishError(err.message ?? "Failed to polish with RANIA");
+    } finally {
+      setPolishing(false);
+      setPolishingField(null);
+    }
+  }
+
+  function handlePolish(field: "teaser" | "hidden") {
+    setPolishError(null);
+
+    const currentText = field === "teaser" ? teaserText : hiddenText;
+    if (!currentText.trim()) {
+      setPolishError("Write something first before polishing.");
+      return;
+    }
+
+    if (!window.PaystackPop || !paystackKey) {
+      setPolishError("Payment library not loaded or Paystack key missing.");
+      return;
+    }
+
+    if (!senderEmail || !senderEmail.includes("@")) {
+      setPolishError("Enter a valid email for Paystack receipt before polishing.");
+      return;
+    }
+
+    setPolishingField(field);
+
+    const handler = window.PaystackPop.setup({
+      key: paystackKey,
+      email: senderEmail,
+      amount: POLISH_PRICE_KES * 100,
+      currency,
+      metadata: {
+        type: "POLISH_TEXT",
+        field,
+        modeKey,
+      },
+      callback: function () {
+        void callPolishAPI(field, currentText);
+      },
+      onClose: function () {
+        setPolishingField(null);
+      },
+    });
+
+    handler.openIframe();
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-purple-950 to-slate-950 relative overflow-hidden">
-      {/* Animated Background Elements */}
-      <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
-        <motion.div
-          animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.5, 0.3] }}
-          transition={{ duration: 8, repeat: Infinity }}
-          className="absolute -top-40 -left-32 w-96 h-96 bg-purple-600/30 rounded-full blur-3xl"
-        />
-        <motion.div
-          animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0.5, 0.3] }}
-          transition={{ duration: 10, repeat: Infinity, delay: 1 }}
-          className="absolute top-1/2 -right-40 w-96 h-96 bg-pink-600/30 rounded-full blur-3xl"
-        />
-        <motion.div
-          animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.5, 0.3] }}
-          transition={{ duration: 9, repeat: Infinity, delay: 2 }}
-          className="absolute -bottom-40 left-1/3 w-96 h-96 bg-cyan-600/30 rounded-full blur-3xl"
-        />
-      </div>
+    <>
+      <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+        {/* Animated background elements */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
+        </div>
 
-      {/* Content */}
-      <div className="relative z-10 w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto">
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
           {/* Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="space-y-2 sm:space-y-3"
-          >
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight">
-              <span className="bg-linear-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
-                Create Your Moment
-              </span>
-            </h1>
-            <p className="text-sm sm:text-base text-slate-200/80 max-w-2xl">
-              You send a teaser. They reply . After their reply, you come back to write the hidden
-              truth they&apos;ll unlock 
-            </p>
-          </motion.div>
-
-          <div className="grid gap-6 sm:gap-8 lg:grid-cols-[1fr,1.2fr]">
-       
-            <motion.form
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              onSubmit={handleSubmit}
-              className="space-y-5 sm:space-y-6"
-            >
-              {/* Modes */}
-              <div className="space-y-2 sm:space-y-3">
-                <label className="text-xs sm:text-sm font-bold text-slate-100">
-                  Pick Your Mode
-                </label>
-                <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                  {MODES.map((m, idx) => {
-                    const active = m.key === modeKey;
-                    return (
-                      <motion.button
-                        key={m.key}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.05 }}
-                        type="button"
-                        onClick={() => setModeKey(m.key)}
-                        className={`group relative rounded-lg sm:rounded-2xl p-3 sm:p-4 text-left transition-all duration-300 transform ${
-                          active
-                            ? "glass-dark border-purple-400/50 scale-105 shadow-lg shadow-purple-500/30"
-                            : "glass hover:border-slate-300/40 hover:scale-[1.02]"
-                        }`}
-                      >
-                        <div className="text-xl sm:text-2xl mb-1 sm:mb-2">{m.emoji}</div>
-                        <div
-                          className={`font-bold text-xs sm:text-sm transition-colors ${
-                            active ? "text-purple-300" : "text-slate-100"
-                          }`}
-                        >
-                          {m.label}
-                        </div>
-                        <div className="text-[10px] sm:text-[11px] text-slate-400 leading-tight mt-1">
-                          {m.description}
-                        </div>
-                      </motion.button>
-                    );
-                  })}
-                </div>
+          <div className="mb-8 sm:mb-12">
+            <div className="flex items-center gap-3 mb-8 cursor-pointer" onClick={() => router.push("/")}>
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-purple-500 via-pink-500 to-cyan-400 flex items-center justify-center text-sm font-black shadow-lg">
+                R
               </div>
+              <span className="text-xl sm:text-2xl font-bold tracking-tight">RANIA</span>
+            </div>
+            <div className="space-y-3 max-w-2xl">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight">
+                Create your<br />
+                <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
+                  emotional moment
+                </span>
+              </h1>
+              <p className="text-base sm:text-lg text-slate-300">
+                Write what you really feel — or tap{" "}
+                <span className="font-semibold text-pink-300">Polish with RANIA</span>{" "}
+                to let AI sharpen your teaser or hidden truth for{" "}
+                <span className="font-bold">KES {POLISH_PRICE_KES}</span>.
+              </p>
+            </div>
+          </div>
 
-              {/* Sender identity */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs"
-              >
-                <div className="space-y-1">
-                  <label className="text-slate-100">Your name (for notifications)</label>
-                  <input
-                    value={senderName}
-                    onChange={(e) => setSenderName(e.target.value)}
-                    className="w-full rounded-lg border text-slate-50 border-slate-700 bg-slate-900/50 px-2 py-1.5 text-xs focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
-                    placeholder="e.g. Abdullahi"
-                  />
+          <div className="grid gap-8 lg:gap-12 lg:grid-cols-[1.1fr,0.9fr] items-start">
+            {/* Left: Form */}
+            <div>
+              <div className="space-y-6">
+                {/* Mode Selection */}
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-100 uppercase tracking-wider mb-4">
+                      Choose your moment type
+                    </h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {MODES.map((m) => {
+                        const active = m.key === modeKey;
+                        return (
+                          <button
+                            key={m.key}
+                            type="button"
+                            onClick={() => setModeKey(m.key)}
+                            className={`group relative rounded-xl p-3 sm:p-4 text-left transition-all duration-300 ${
+                              active
+                                ? "bg-gradient-to-br from-purple-600/40 to-pink-600/30 border border-purple-400/60 shadow-lg shadow-purple-500/20 scale-105"
+                                : "bg-slate-900/50 border border-slate-800 hover:border-slate-700 hover:bg-slate-900/70 hover:scale-102"
+                            }`}
+                          >
+                            <div className="text-2xl sm:text-3xl mb-2">{m.emoji}</div>
+                            <div className={`font-bold text-sm ${active ? "text-purple-100" : "text-slate-100"}`}>
+                              {m.label}
+                            </div>
+                            <div className="text-xs text-slate-400 mt-1 line-clamp-1">{m.description}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-slate-100">
-                    WhatsApp number (+2547…)
-                  </label>
-                  <input
-                    value={senderPhone}
-                    onChange={(e) => setSenderPhone(e.target.value)}
-                    className="w-full rounded-lg border border-slate-700 text-slate-50 bg-slate-900/50 px-2 py-1.5 text-xs focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
-                    placeholder="+2547XXXXXXXX"
-                  />
-                </div>
-              </motion.div>
 
-              {/* Language / Tone / Format */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.25 }}
-                className="glass rounded-lg sm:rounded-2xl p-3 sm:p-4 space-y-3 sm:space-y-4"
-              >
-                <h3 className="font-bold text-slate-100 text-xs sm:text-sm">
-                  Customize Your Vibe
-                </h3>
-                <div className="grid grid-cols-3 gap-2 sm:gap-3 text-slate-50">
+                {/* Sender Info */}
+                <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 sm:p-6 space-y-4">
+                  <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">Your details</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-slate-100 text-sm">Your name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Abdullahi"
+                        value={senderName}
+                        onChange={(e) => setSenderName(e.target.value)}
+                        className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none transition"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-slate-100 text-sm">WhatsApp (+254...)</label>
+                      <input
+                        type="tel"
+                        placeholder="+2547XXXXXXXX"
+                        value={senderPhone}
+                        onChange={(e) => setSenderPhone(e.target.value)}
+                        className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none transition"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-slate-100 text-sm">Email (for receipts/polish)</label>
+                      <input
+                        type="email"
+                        placeholder="you@campus.ac.ke"
+                        value={senderEmail}
+                        onChange={(e) => setSenderEmail(e.target.value)}
+                        className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none transition"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Customization */}
+                <div className="grid grid-cols-3 gap-4">
                   {[
                     { label: "Language", options: LANG_OPTIONS, state: language, setState: setLanguage },
                     { label: "Tone", options: TONE_OPTIONS, state: tone, setState: setTone },
                     { label: "Format", options: DELIVERY_OPTIONS, state: deliveryFormat, setState: setDeliveryFormat },
                   ].map((group) => (
-                    <div key={group.label} className="space-y-1 sm:space-y-2">
-                      <label className="text-[10px] sm:text-xs font-bold text-slate-300">
+                    <div key={group.label}>
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
                         {group.label}
                       </label>
                       <select
                         value={group.state}
                         onChange={(e) => group.setState(e.target.value as any)}
-                        className="w-full rounded-lg bg-slate-950/50 border text-slate-50 border-slate-600 px-2 py-1.5 sm:px-3 sm:py-2 text-[10px] sm:text-xs font-medium focus:border-purple-400 focus:outline-none transition backdrop-blur-sm"
+                        className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-3 py-2 text-sm focus:border-purple-400 focus:outline-none transition"
                       >
                         {group.options.map((opt: any) => (
                           <option key={opt.value} value={opt.value}>
@@ -269,161 +358,166 @@ export default function CreateMomentPage() {
                     </div>
                   ))}
                 </div>
-              </motion.div>
 
-              {/* Teaser */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="space-y-3 sm:space-y-4"
-              >
-                <div className="space-y-1 sm:space-y-2">
-                  <label className="text-xs sm:text-sm font-bold text-slate-100 flex items-center gap-1 sm:gap-2">
-                    👀 Teaser (Visible)
-                  </label>
-                  <textarea
-                    value={teaserText}
-                    onChange={(e) => setTeaserText(e.target.value)}
-                    rows={2}
-                    className="w-full rounded-lg bg-slate-950/50 border border-slate-700 px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm text-slate-100 focus:border-purple-400 focus:outline-none transition resize-none backdrop-blur-sm"
-                    placeholder="Real talk time… reply first."
-                  />
+                {/* Text Areas */}
+                <div className="space-y-4">
+                  {/* Teaser */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-bold text-slate-100">👀 Teaser (Visible)</label>
+                      <button
+                        type="button"
+                        onClick={() => handlePolish("teaser")}
+                        disabled={polishing && polishingField === "teaser"}
+                        className="text-xs px-3 py-1 rounded-full bg-pink-500/20 border border-pink-400/50 text-pink-200 hover:bg-pink-500/30 transition disabled:opacity-50"
+                      >
+                        {polishing && polishingField === "teaser" ? "✨ Polishing…" : `✨ Polish · KES ${POLISH_PRICE_KES}`}
+                      </button>
+                    </div>
+                    <textarea
+                      value={teaserText}
+                      onChange={(e) => setTeaserText(e.target.value)}
+                      rows={2}
+                      className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition resize-none"
+                      placeholder="Real talk time… reply first."
+                    />
+                    <p className="text-xs text-slate-500 mt-2">First impression on the link</p>
+                  </div>
+
+                  {/* Hidden */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-bold text-slate-100">🔒 Hidden Truth</label>
+                      <button
+                        type="button"
+                        onClick={() => handlePolish("hidden")}
+                        disabled={polishing && polishingField === "hidden"}
+                        className="text-xs px-3 py-1 rounded-full bg-pink-500/20 border border-pink-400/50 text-pink-200 hover:bg-pink-500/30 transition disabled:opacity-50"
+                      >
+                        {polishing && polishingField === "hidden" ? "✨ Polishing…" : `✨ Polish · KES ${POLISH_PRICE_KES}`}
+                      </button>
+                    </div>
+                    <textarea
+                      value={hiddenText}
+                      onChange={(e) => setHiddenText(e.target.value)}
+                      rows={4}
+                      className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition resize-none"
+                      placeholder="Say what you really mean. This is the confession / truth they will see after reply."
+                    />
+                    <p className="text-xs text-slate-500 mt-2">(They unlock this with their reply)</p>
+                  </div>
                 </div>
-              </motion.div>
 
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-400 backdrop-blur-sm"
+                {/* Error Messages */}
+                {(polishError || error) && (
+                  <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-200">
+                    ⚠️ {polishError || error}
+                  </div>
+                )}
+
+                {/* Submit Button */}
+                <button
+                  onClick={handleSubmit}
+                  disabled={creating}
+                  className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all duration-300 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  ⚠️ {error}
-                </motion.div>
-              )}
+                  {creating ? "⏳ Creating…" : "✨ Create Free Moment"}
+                </button>
 
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                type="submit"
-                disabled={creating}
-                className="w-full py-3 sm:py-4 rounded-lg sm:rounded-xl bg-linear-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-sm sm:text-base shadow-lg shadow-purple-500/50 hover:shadow-purple-500/75 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {creating ? "⏳ Creating…" : "✨ Create Free Moment"}
-              </motion.button>
-
-             
-            </motion.form>
-
-            {/* inset-inline-end: preview & caption */}
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              className="space-y-3 sm:space-y-4"
-            >
-              <div className="glass-dark rounded-lg sm:rounded-2xl p-4 sm:p-6 space-y-3 sm:space-y-4 border border-purple-400/40">
-                <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
-                  <div className="inline-flex items-center gap-1 sm:gap-2 rounded-full bg-purple-500/20 px-2 sm:px-3 py-1">
-                    <span className="text-base sm:text-lg">
-                      {MODES.find((m) => m.key === modeKey)?.emoji}
-                    </span>
-                    <span className="text-[10px] sm:text-xs font-bold uppercase text-purple-200">
-                      {MODES.find((m) => m.key === modeKey)?.label}
-                    </span>
-                  </div>
-                  <span className="text-[10px] sm:text-xs font-medium px-2 sm:px-3 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-100">
-                    🆓 Sender 
-                  </span>
-                </div>
-
-                <div className="space-y-2 sm:space-y-3 rounded-lg sm:rounded-xl bg-slate-900/50 border border-slate-700 p-3 sm:p-4 backdrop-blur-sm">
-                  <p className="text-sm sm:text-base leading-relaxed text-slate-100 font-medium">
-                    {teaserText || "Your teaser appears here…"}
-                  </p>
-                  <div className="flex items-center justify-between text-[10px] sm:text-xs text-slate-400 pt-2 border-t border-slate-700">
-                    <span>RANIA · emotional thread</span>
-                    <span className="rounded px-2 py-1 bg-slate-800">
-                      {shortCode || "pending"}
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-[10px] sm:text-xs text-slate-400 italic">
-                  This is what they see in WhatsApp. After they reply, you&apos;ll write the hidden truth that they have to unlock.
+                <p className="text-center text-sm text-slate-400">
+                  Writing is free. Polishing each section with RANIA costs KES {POLISH_PRICE_KES}.
                 </p>
               </div>
+            </div>
 
+            {/* Right: Preview & Actions */}
+            <div className="space-y-6">
+              {/* Preview Card */}
+              <div className="bg-gradient-to-br from-slate-900/60 to-slate-950/40 border border-slate-800/60 rounded-2xl p-6 backdrop-blur-sm">
+                <div className="mb-6">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 px-4 py-2 mb-4">
+                    <span className="text-2xl">{MODES.find((m) => m.key === modeKey)?.emoji}</span>
+                    <span className="text-xs font-bold uppercase text-purple-200">{MODES.find((m) => m.key === modeKey)?.label}</span>
+                  </div>
+                  <p className="text-xs text-slate-400">Preview</p>
+                </div>
+
+                <div className="space-y-4 bg-slate-950/50 border border-slate-700/50 rounded-xl p-5">
+                  <div>
+                    <p className="text-xs text-slate-400 font-semibold mb-2">TEASER</p>
+                    <p className="text-base leading-relaxed text-slate-100 font-medium">
+                      {teaserText || "Your teaser appears here…"}
+                    </p>
+                  </div>
+                  <div className="h-px bg-gradient-to-r from-slate-700 to-transparent"></div>
+                  <div>
+                    <p className="text-xs text-slate-400 font-semibold mb-2">HIDDEN (After reply)</p>
+                    <p className="text-sm leading-relaxed text-slate-100 blur-md hover:blur-none transition-all cursor-default select-none">
+                      {hiddenText || "Your hidden message appears here…"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between mt-4 text-xs text-slate-500">
+                  <span>RANIA · emotional thread</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-900 border border-slate-700">
+                    {shortCode || "pending"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions - After creation */}
               {shortCode && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="glass-dark rounded-lg sm:rounded-2xl p-4 sm:p-6 space-y-3 sm:space-y-4 border-purple-400/30 bg-slate-950/50 backdrop-blur-xl"
-                >
-                  <div className="flex items-center gap-1 sm:gap-2 mb-2 sm:mb-3">
-                    <span className="text-base sm:text-lg">💬</span>
-                    <h3 className="font-bold text-purple-200 text-xs sm:text-sm">
-                      Share on WhatsApp
-                    </h3>
+                <div className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 rounded-2xl p-6 space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-2xl">🚀</span>
+                    <h3 className="font-bold text-purple-100">Ready to share</h3>
                   </div>
 
-                  <textarea
-                    readOnly
-                    rows={4}
-                    className="w-full rounded-lg bg-slate-900/50 border border-slate-700 px-2 sm:px-3 py-2 text-[10px] sm:text-xs text-slate-100 font-mono resize-none backdrop-blur-sm"
-                    value={caption}
-                  />
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      type="button"
-                      onClick={() => {
-                        if (caption) navigator.clipboard.writeText(caption);
-                      }}
-                      className="flex-1 py-1.5 sm:py-2 rounded-lg bg-purple-500/20 border border-purple-400/50 text-purple-200 font-bold text-[11px] sm:text-xs hover:bg-purple-500/30 transition"
-                    >
-                      📋 Copy Caption
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      type="button"
-                      onClick={handleShareWhatsApp}
-                      className="flex-1 py-1.5 sm:py-2 rounded-lg bg-green-500/20 border border-green-400/60 text-green-300 font-bold text-[11px] sm:text-xs hover:bg-green-500/30 transition"
-                    >
-                      🟢 Share on WhatsApp
-                    </motion.button>
+                  <div className="bg-slate-950/60 rounded-lg p-4 border border-slate-700">
+                    <p className="text-xs text-slate-400 mb-2 font-semibold">WhatsApp Caption</p>
+                    <textarea
+                      readOnly
+                      rows={3}
+                      value={caption}
+                      className="w-full bg-slate-900/50 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-100 resize-none"
+                    />
                   </div>
 
-                  <p className="text-[10px] sm:text-xs text-purple-200/80">
-                    Tap &quot;Share on WhatsApp&quot; to post instantly, or copy the caption if you want to edit it first. 🚀
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(caption)}
+                      className="py-3 rounded-lg bg-purple-500/30 border border-purple-400/50 text-purple-200 font-semibold text-sm hover:bg-purple-500/40 transition"
+                    >
+                      📋 Copy caption
+                    </button>
+                    <button
                       type="button"
                       onClick={() => window.open(`/m/${shortCode}`, "_blank")}
-                      className="flex-1 rounded-full border border-slate-600 px-3 py-1.5 text-[11px] text-slate-100 hover:bg-slate-900/50 transition"
+                      className="py-3 rounded-lg bg-cyan-500/30 border border-cyan-400/50 text-cyan-200 font-semibold text-sm hover:bg-cyan-500/40 transition"
                     >
-                      View as receiver
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      type="button"
-                      onClick={() => window.open(`/moments/manage/${shortCode}`, "_blank")}
-                      className="flex-1 rounded-full border border-purple-500 px-3 py-1.5 text-[11px] text-purple-200 hover:bg-purple-500/20 transition"
-                    >
-                      Manage this moment (write hidden truth)
-                    </motion.button>
+                      👀 View as receiver
+                    </button>
                   </div>
-                </motion.div>
+
+                  <button
+                    type="button"
+                    onClick={() => window.open(`/moments/manage/${shortCode}`, "_blank")}
+                    className="w-full py-3 rounded-lg border border-pink-500/60 bg-slate-950 text-pink-200 font-semibold text-sm hover:bg-pink-500/10 transition"
+                  >
+                    🛠 Manage this moment
+                  </button>
+
+                  <p className="text-xs text-slate-400">
+                    Paste the caption into WhatsApp Status or DMs, then use &quot;Manage this moment&quot; to see replies and adjust hidden truth later if needed.
+                  </p>
+                </div>
               )}
-            </motion.div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
