@@ -96,7 +96,7 @@ export default function HomePage() {
                   transition={{ duration: 2, repeat: Infinity }}
                   className="h-2 w-2 rounded-full bg-green-400"
                 />
-                Now live · Authentic connections
+               RANIA · emotional thread
               </motion.div>
 
               {/* Main Heading */}

@@ -10,6 +10,16 @@ import { DeepTruthCardCanvas } from "@/components/DeepTruthCardCanvas";
 import { MomentCardCanvas } from "@/components/MomentCardCanvas";
 import { apiGetMoment, apiReplyToMoment, apiDeepTruth } from "@/lib/rania/client";
 
+/**
+ * Upgraded Moment view page
+ *
+ * UX notes:
+ * - No money is mentioned anywhere before the hidden preview is shown.
+ * - When a preview exists and is locked, the unlock CTA shows KES 20 and opens Paystack.
+ * - After unlock (successful payment) we fetch the full hidden text and show reaction/reply form.
+ * - A "Resend / Share" helper is added to let receiver share the unlocked truth to another person.
+ */
+
 declare global {
   interface Window {
     PaystackPop: {
@@ -27,16 +37,8 @@ declare global {
   }
 }
 
+const HIDDEN_UNLOCK_PRICE_KES = 20;
 const DEEP_TRUTH_PRICE_KES = 50;
-
-const MODES: { key: string; label: string; emoji: string }[] = [
-  { key: "CRUSH_REVEAL", label: "Crush Reveal", emoji: "💕" },
-  { key: "DEEP_CONFESSION", label: "Deep Confession", emoji: "🎭" },
-  { key: "BESTIE_TRUTH_CHAIN", label: "Bestie Truth", emoji: "👯" },
-  { key: "ROAST_ME_SOFTLY", label: "Roast Me", emoji: "🔥" },
-  { key: "FORGIVE_ME", label: "Forgive Me", emoji: "🤝" },
-  { key: "CLOSURE", label: "Closure", emoji: "✨" },
-];
 
 type MomentData = {
   id: string;
@@ -46,15 +48,19 @@ type MomentData = {
   deliveryFormat: string;
   teaserText: string;
   hasHidden: boolean;
-  modeKey?: string;
+  hiddenPreview?: string;
+  isHiddenLocked?: boolean;
+  hiddenUnlockPriceKes?: number;
 };
 
-type ReplyRow = {
-  id: string;
-  reply_text: string;
-  reaction_text: string | null;
-  created_at: string;
-};
+function maskPreview(full: string): string {
+  const trimmed = full.trim();
+  if (!trimmed) return "";
+  const words = trimmed.split(/\s+/);
+  const first = words[0] || "";
+  // show first word then dots
+  return `${first} ${".".repeat(26)}`;
+}
 
 export default function MomentViewPage() {
   const params = useParams<{ shortCode: string }>();
@@ -65,27 +71,46 @@ export default function MomentViewPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // First reply (free)
   const [replyText, setReplyText] = useState("");
-  const [vibeScore, setVibeScore] = useState<number | undefined>();
+  const [vibeScore, setVibeScore] = useState<number | undefined>(5);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [hasReplied, setHasReplied] = useState(false);
   const [replyId, setReplyId] = useState<string | null>(null);
 
+  // Hidden truth unlock
   const [hiddenFullText, setHiddenFullText] = useState<string | null>(null);
+  const [unlockingHidden, setUnlockingHidden] = useState(false);
 
+  // Reaction to full hidden truth
   const [reactionText, setReactionText] = useState("");
-  const [finalReactionText, setFinalReactionText] = useState("");
   const [submittingReaction, setSubmittingReaction] = useState(false);
   const [reactionSent, setReactionSent] = useState(false);
 
+
+  // Deep Truth
   const [deepTruth, setDeepTruth] = useState<string | null>(null);
   const [deepTruthLoading, setDeepTruthLoading] = useState(false);
   const [deepTruthError, setDeepTruthError] = useState<string | null>(null);
   const [deepTruthEmail, setDeepTruthEmail] = useState<string>("test@example.com");
   const [payingDeepTruth, setPayingDeepTruth] = useState(false);
 
+  // Cards
   const [showMomentCard, setShowMomentCard] = useState(false);
   const [showDeepTruthCard, setShowDeepTruthCard] = useState(false);
+  const [finalReactionText, setFinalReactionText] = useState<string | null>(null);
+
+type ReplyRow = {
+  id: string;
+  reply_text: string | null;
+  reaction_text: string | null;
+  created_at: string;
+  identity: any;
+};
+
+
+  // small local toast
+  const [toast, setToast] = useState<string | null>(null);
 
   const paystackKey =
     typeof window !== "undefined"
@@ -96,72 +121,78 @@ export default function MomentViewPage() {
       ? process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "KES"
       : "KES";
 
-  const baseUrl =
-    typeof window !== "undefined"
-      ? window.location.origin
-      : "https://www.raniaonline.com";
-  const startUrl = `${baseUrl}/moments/create`;
+  useEffect(() => {
+  let cancel = false;
 
-  const selectedMode = MODES.find((m) => m.key === moment?.modeKey) || MODES[0];
+  async function load() {
+    if (!shortCode) return;
+    setLoading(true);
+    setLoadError(null);
+
+    try {
+      const res = await apiGetMoment(shortCode);
+      if (cancel) return;
+
+      const m = res.moment as MomentData;
+      setMoment(m);
+
+      // ---- FIX: ALWAYS load replies when status allows
+      const statusHasReply = 
+        m.status === "awaiting_reply" || 
+        m.status === "completed";
+
+      if (statusHasReply) {
+        try {
+          const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
+            method: "GET",
+          });
+          const json = await r.json();
+
+          if (!cancel && json.success && Array.isArray(json.replies) && json.replies.length > 0) {
+            const replies = json.replies as ReplyRow[];
+const latest = replies[replies.length - 1];
+setReplyId(latest.id);
+
+if (latest.reaction_text) {
+  setFinalReactionText(latest.reaction_text);
+  setReactionSent(true);
+}
+
+          }
+        } catch (err) {
+          console.warn("[receiver] Failed to load replies:", err);
+        }
+      } else {
+        setHasReplied(false);
+        setReplyId(null);
+      }
+
+    } catch (err: any) {
+      if (!cancel) setLoadError(err.message ?? "Failed to load moment");
+    } finally {
+      if (!cancel) setLoading(false);
+    }
+  }
+
+  load();
+ return () => {
+  cancel = true;   // do not return anything!
+};
+
+}, [shortCode]);
 
   useEffect(() => {
-    let cancel = false;
-
-    async function load() {
-      if (!shortCode) return;
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const res = await apiGetMoment(shortCode);
-        if (cancel) return;
-
-        const m = res.moment as any as MomentData;
-        setMoment(m);
-
-        const statusHasReply = m.status === "awaiting_reply" || m.status === "completed";
-
-        if (statusHasReply) {
-          try {
-            const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
-              method: "GET",
-            });
-            const json = await r.json();
-            if (!cancel && json.success && Array.isArray(json.replies) && json.replies.length > 0) {
-              const replies = json.replies as ReplyRow[];
-              const latest = replies[replies.length - 1];
-              setReplyId(latest.id);
-              setHasReplied(true);
-              if (latest.reaction_text) {
-                setFinalReactionText(latest.reaction_text);
-                setReactionSent(true);
-              }
-            }
-          } catch (err) {
-            console.warn("[receiver] Failed to load replies:", err);
-          }
-        } else {
-          setHasReplied(false);
-          setReplyId(null);
-        }
-      } catch (err: any) {
-        if (!cancel) setLoadError(err.message ?? "Failed to load moment");
-      } finally {
-        if (!cancel) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancel = true;
-    };
-  }, [shortCode]);
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   async function handleReplySubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!moment) return;
 
     if (!replyText.trim()) {
-      alert("Reply cannot be empty.");
+      setToast("Reply cannot be empty.");
       return;
     }
 
@@ -175,60 +206,60 @@ export default function MomentViewPage() {
       setReplyId(res.replyId);
       setReplyText("");
       setHasReplied(true);
-      setHiddenFullText(res.hiddenText);
+      setToast("Reply sent. Waiting for their hidden truth…");
+      // DO NOT use res.hiddenText in the UI; hidden truth only comes via preview/full unlock
     } catch (err: any) {
-      alert(err.message ?? "Failed to submit reply");
+      setToast(err.message ?? "Failed to submit reply");
     } finally {
       setSubmittingReply(false);
     }
   }
 
-  async function handleReactionSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!moment) return;
-    if (!replyId) {
-      alert("We could not link your reaction to the conversation. Please refresh and try again.");
-      return;
-    }
-    if (!reactionText.trim()) {
-      alert("Reaction cannot be empty.");
-      return;
-    }
+ async function handleReactionSubmit(e: React.FormEvent) {
+  e.preventDefault();
+  if (!moment) return;
 
-    setSubmittingReaction(true);
-    try {
-      const textToSave = reactionText.trim();
-
-      const res = await fetch(`/api/rania/moments/${moment.id}/reaction`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-rania-guest-id":
-            typeof window !== "undefined"
-              ? localStorage.getItem("rania_guest_id") ?? ""
-              : "",
-        },
-        body: JSON.stringify({
-          replyId,
-          reactionText: textToSave,
-          identity: {},
-        }),
-      });
-
-      const json = await res.json();
-      if (!json.success) {
-        throw new Error(json.error || "Failed to send reaction");
-      }
-
-      setFinalReactionText(textToSave);
-      setReactionText("");
-      setReactionSent(true);
-    } catch (err: any) {
-      alert(err.message ?? "Error sending reaction");
-    } finally {
-      setSubmittingReaction(false);
-    }
+  if (!replyId) {
+    alert("We could not find your reply. Refresh and try again.");
+    return;
   }
+
+  if (!reactionText.trim()) {
+    alert("Reaction cannot be empty.");
+    return;
+  }
+
+  setSubmittingReaction(true);
+
+  try {
+    const res = await fetch(`/api/rania/moments/${moment.id}/reaction`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-rania-guest-id":
+          typeof window !== "undefined" ? localStorage.getItem("rania_guest_id") ?? "" : "",
+      },
+      body: JSON.stringify({
+        replyId,
+        reactionText: reactionText.trim(),
+        identity: {},
+      }),
+    });
+
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || "Failed to send reaction");
+
+    setFinalReactionText(reactionText.trim());
+    setReactionText("");
+    setReactionSent(true);
+
+  } catch (err: any) {
+    alert(err.message ?? "Error sending reaction");
+  } finally {
+    setSubmittingReaction(false);
+  }
+}
+
 
   async function handleDeepTruth() {
     if (!moment) return;
@@ -282,6 +313,7 @@ export default function MomentViewPage() {
         skipPaymentCheck: true,
       });
       setDeepTruth(res.deepTruth);
+      setToast("Deep Truth unlocked.");
     } catch (err: any) {
       setDeepTruthError(err.message ?? "Failed to get Deep Truth");
     } finally {
@@ -289,12 +321,110 @@ export default function MomentViewPage() {
     }
   }
 
+  async function handleHiddenUnlock() {
+    if (!moment) return;
+    if (!window.PaystackPop || !paystackKey) {
+      setToast("Payment system not ready");
+      return;
+    }
+
+    const priceKes = moment.hiddenUnlockPriceKes ?? HIDDEN_UNLOCK_PRICE_KES;
+
+    setUnlockingHidden(true);
+
+    const handler = window.PaystackPop.setup({
+      key: paystackKey,
+      email: deepTruthEmail || "user@example.com",
+      amount: priceKes * 100,
+      currency,
+      metadata: {
+        type: "HIDDEN_UNLOCK",
+        momentId: moment.id,
+        shortCode: moment.shortCode,
+      },
+      callback: function (response) {
+        setUnlockingHidden(false);
+        if (response.reference) {
+          void fetchHiddenWithReference(response.reference);
+        } else {
+          setToast("Payment completed but no reference returned");
+        }
+      },
+      onClose: function () {
+        setUnlockingHidden(false);
+      },
+    });
+
+    handler.openIframe();
+  }
+
+  async function fetchHiddenWithReference(reference: string) {
+    if (!moment) return;
+    try {
+      const res = await fetch(
+        `/api/rania/moments/${moment.id}/hidden/unlock`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-rania-guest-id":
+              typeof window !== "undefined"
+                ? localStorage.getItem("rania_guest_id") ?? ""
+                : "",
+          },
+          body: JSON.stringify({
+            paymentReference: reference,
+            skipPaymentCheck: true,
+            identity: {},
+          }),
+        },
+      );
+
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || "Failed to unlock hidden truth");
+      }
+
+      setHiddenFullText(json.hiddenFullText);
+      setToast("Hidden truth unlocked.");
+    } catch (err: any) {
+      setToast(err.message ?? "Failed to unlock hidden truth");
+    }
+  }
+
+  function handleShareFullText() {
+    const baseUrl =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://www.raniaonline.com";
+    const startUrl = `${baseUrl}/moments/create`;
+    const text = hiddenFullText
+      ? `I just unlocked a moment: "${hiddenFullText}"\n\nCreate yours: ${startUrl}`
+      : `Create a RANIA moment: ${startUrl}`;
+
+    // attempt to share, else copy
+    if (navigator.share) {
+      navigator
+        .share({
+          title: "Unlocked RANIA moment",
+          text,
+        })
+        .catch(() => {
+          navigator.clipboard.writeText(text);
+          setToast("Link copied to clipboard");
+        });
+    } else {
+      navigator.clipboard.writeText(text);
+      setToast("Copied to clipboard");
+    }
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
-        <div className="text-center space-y-4">
+      <div className="flex items-center justify-center min-h-[420px]">
+        <div className="text-center space-y-3">
           <div className="text-5xl animate-bounce">✨</div>
-          <p className="text-pink-300 font-medium">Loading this moment…</p>
+          <p className="text-pink-500/80">Loading this moment…</p>
         </div>
       </div>
     );
@@ -302,314 +432,399 @@ export default function MomentViewPage() {
 
   if (loadError || !moment) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center px-4">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 max-w-md w-full text-center space-y-4">
-          <div className="text-5xl">😕</div>
-          <p className="text-slate-300 font-medium">Could not load this RANIA moment.</p>
-          <button
-            onClick={() => router.push("/moments/create")}
-            className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition"
-          >
-            Create Your Own
-          </button>
-        </div>
+      <div className="glass rounded-xl sm:rounded-2xl p-6 sm:p-8 max-w-md mx-auto space-y-4 text-center">
+        <div className="text-5xl">😕</div>
+        <p className="text-pink-600 font-medium">Could not load this RANIA moment.</p>
+        <button
+          onClick={() => router.push("/moments/create")}
+          className="w-full py-2 sm:py-3 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition"
+        >
+          Create Your Own
+        </button>
       </div>
     );
   }
 
+  const baseUrl =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://www.raniaonline.com";
+  const startUrl = `${baseUrl}/moments/create`;
+
+  const hasHiddenPreview = !!moment.hiddenPreview;
+  const hasFullHidden = !!hiddenFullText;
+
+  // PHASES
   const phaseReply = !hasReplied;
-  const phaseAfterReply = hasReplied;
-  const finalReplyForCard =
-    finalReactionText || (reactionSent ? "[Reaction sent]" : "[Their reaction]");
+  const phaseAwaitingHidden = hasReplied && !hasHiddenPreview && !hasFullHidden;
+  const phasePreviewOnly = hasReplied && hasHiddenPreview && !hasFullHidden;
+  const phaseFullHidden = hasReplied && hasFullHidden;
+
+  const previewMasked =
+    hasHiddenPreview && moment.hiddenPreview ? maskPreview(moment.hiddenPreview) : "";
+
+  const fullHiddenText = hiddenFullText ?? "";
 
   return (
     <>
       <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
 
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-        {/* Animated background */}
-        <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
-        </div>
-
-        <div className="relative z-10 max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-6 sm:space-y-8">
-          {/* HEADER */}
-          <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-4 sm:space-y-6 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 backdrop-blur-sm">
-            <div className="space-y-2 sm:space-y-3">
-              <div className="text-xs sm:text-sm font-bold text-purple-300 uppercase tracking-wider mb-3">
-                ✨ RANIA Emotional Thread
+      <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0 py-6">
+        {/* HEADER */}
+        <header className="rounded-3xl p-6 bg-gradient-to-br from-purple-700/10 via-pink-700/8 to-cyan-700/6 border border-purple-400/30 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
+                RANIA — Emotional Thread
               </div>
-
-              {/* Mode Badge */}
-              <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 px-4 py-2 mb-4 w-fit">
-                <span className="text-xl">{selectedMode.emoji}</span>
-                <span className="text-xs font-bold uppercase text-purple-200">{selectedMode.label}</span>
-              </div>
-
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-100 leading-tight">
+              <h1 className="mt-2 text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-100 leading-tight">
                 {moment.teaserText}
               </h1>
+              <p className="mt-2 text-sm text-slate-300">
+                Someone sent you this. Reply honestly — first reply. When they write a hidden truth,
+                you&apos;ll see a masked preview here.
+              </p>
             </div>
 
-            <div className="rounded-xl sm:rounded-2xl bg-slate-950/60 border border-slate-800/60 p-4 sm:p-5 backdrop-blur-sm">
-              <p className="text-sm sm:text-base text-slate-200 leading-relaxed">
-                💭 <span className="font-semibold">They sent you a teaser.</span> Reply first (free). After you reply, RANIA reveals their full hidden truth. Then you can react.
-              </p>
+            <div className="hidden sm:flex flex-col items-end gap-2">
+              <button
+                onClick={() => router.push("/moments/create")}
+                className="px-4 py-2 rounded-full bg-slate-900/70 text-xs text-white font-semibold border border-slate-700 hover:scale-105 transition"
+              >
+                Create a moment
+              </button>
+              <div className="text-xs text-slate-400">Share a real moment — be bold.</div>
             </div>
           </div>
+        </header>
 
-          {/* PHASE 1: reply */}
-          {phaseReply && (
-            <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-6 sm:space-y-8 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 backdrop-blur-sm">
-              <div>
-                <h2 className="font-bold text-xl sm:text-2xl text-slate-100 flex items-center gap-2 mb-2">
-                  <span>💬</span> Your Reply
-                </h2>
-                <p className="text-sm text-slate-400">Free • Takes less than a minute</p>
-              </div>
-
-              <div className="space-y-3">
-                <label className="text-sm font-bold text-slate-100 block">
-                  Type your honest reply
-                </label>
-                <textarea
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  rows={4}
-                  className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition resize-none"
-                  placeholder="Reply from your heart…"
-                />
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-bold text-slate-100 flex items-center justify-between mb-3">
-                    <span>How&apos;s the vibe? (1–10)</span>
-                    <span className="text-lg font-black text-pink-300">{vibeScore ?? 5}</span>
-                  </label>
+        {/* MAIN GRID */}
+        <main className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left column: reply / preview / hidden / share */}
+          <section className="space-y-5">
+            {/* REPLY CARD */}
+            {phaseReply && (
+              <div className="rounded-2xl p-5 bg-slate-900/80 border border-slate-800 shadow-md">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-slate-100">💬 Reply (free)</h2>
+                  <div className="text-xs text-slate-400">First reply unlocks the preview flow</div>
                 </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  value={vibeScore ?? 5}
-                  onChange={(e) => setVibeScore(Number(e.target.value))}
-                  className="w-full h-3 bg-gradient-to-r from-pink-600 to-cyan-500 rounded-lg appearance-none cursor-pointer accent-pink-500"
-                />
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Low</span>
-                  <span>High</span>
-                </div>
-              </div>
 
-              <button
-                onClick={handleReplySubmit}
-                disabled={submittingReply}
-                className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all duration-300 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {submittingReply ? "📤 Sending your reply…" : "✨ Reply & See Their Truth"}
-              </button>
+                <form onSubmit={handleReplySubmit} className="mt-4 space-y-4">
+                  <label className="block text-xs text-slate-300 font-semibold">Your reply</label>
+                  <textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    rows={4}
+                    className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none"
+                    placeholder="Say something honest and kind…"
+                  />
 
-              <p className="text-center text-sm text-slate-400">
-                After you reply, their hidden truth will be revealed.
-              </p>
-            </div>
-          )}
-
-          {/* PHASE 2: after reply -> show hidden + reaction + cards */}
-          {phaseAfterReply && (
-            <div className="space-y-6">
-              {/* Hidden truth */}
-              {hiddenFullText && (
-                <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-4 bg-gradient-to-br from-cyan-600/20 to-blue-600/20 border border-cyan-400/30 backdrop-blur-sm">
-                  <h2 className="font-bold text-lg sm:text-2xl text-slate-100 flex items-center gap-2">
-                    <span>🔓</span> Their Hidden Truth
-                  </h2>
-                  <div className="rounded-xl bg-slate-950/60 border border-slate-800/60 p-5 sm:p-6">
-                    <p className="text-sm sm:text-base leading-relaxed text-slate-100 font-medium whitespace-pre-wrap">
-                      {hiddenFullText}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Reaction form */}
-              {hiddenFullText && (
-                <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-5 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 backdrop-blur-sm">
-                  <h2 className="font-bold text-lg sm:text-2xl text-slate-100 flex items-center gap-2">
-                    <span>💭</span> Your Reaction
-                  </h2>
-                  <div className="space-y-3">
-                    <label className="text-sm font-semibold text-slate-200">
-                      Now that you&apos;ve seen their full truth, what do you want to say back?
-                    </label>
-                    <textarea
-                      value={reactionText}
-                      onChange={(e) => setReactionText(e.target.value)}
-                      rows={3}
-                      className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition resize-none"
-                      placeholder="Your honest reaction…"
-                    />
-                  </div>
-                  <button
-                    onClick={handleReactionSubmit}
-                    disabled={submittingReaction || !reactionText.trim()}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base hover:scale-105 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {submittingReaction ? "Sending…" : "Send Your Reaction"}
-                  </button>
-                </div>
-              )}
-
-              {/* Moment static card */}
-              {hiddenFullText && (
-                <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-5 bg-gradient-to-br from-slate-800/30 to-slate-900/30 border border-slate-700/60 backdrop-blur-sm">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-slate-100">
-                        💾 Conversation Card
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowMomentCard((v) => !v)}
-                        className="text-xs px-3 py-1 rounded-full border border-slate-600 text-slate-300 hover:bg-slate-700/50 transition"
-                      >
-                        {showMomentCard ? "Hide card" : "Show card"}
-                      </button>
-                    </div>
-                    {showMomentCard && (
-                      <MomentCardCanvas
-                        teaser={moment.teaserText}
-                        hiddenText={hiddenFullText}
-                        replyText={finalReplyForCard}
-                        shareUrl={`${baseUrl}/m/${moment.shortCode}`}
-                      />
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-400 italic">
-                    Tip: If you&apos;re the sender, open this same link after the conversation and download the card to keep the memory.
-                  </p>
-                </div>
-              )}
-
-              {/* Deep Truth */}
-              <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-5 bg-gradient-to-br from-orange-600/20 to-pink-600/20 border border-orange-400/30 backdrop-blur-sm">
-                <h2 className="font-bold text-lg sm:text-2xl text-slate-100 flex items-center gap-2">
-                  <span>🔬</span> Deep Breakdown
-                </h2>
-                <p className="text-sm text-slate-300">
-                  Optional AI analysis • KES {DEEP_TRUTH_PRICE_KES}
-                </p>
-
-                {!deepTruth && !deepTruthLoading && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-semibold text-slate-100 block mb-2">
-                        Email for payment receipt
-                      </label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs text-slate-400">Vibe (1–10)</label>
                       <input
-                        type="email"
-                        value={deepTruthEmail}
-                        onChange={(e) => setDeepTruthEmail(e.target.value)}
-                        placeholder="you@example.com"
-                        className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition"
+                        aria-label="Vibe"
+                        type="range"
+                        min={1}
+                        max={10}
+                        value={vibeScore ?? 5}
+                        onChange={(e) => setVibeScore(Number(e.target.value))}
+                        className="w-full h-2 rounded-lg appearance-none cursor-pointer"
                       />
                     </div>
+
+                    <div className="w-20 text-center text-xs text-pink-300 font-semibold">
+                      {vibeScore ?? 5}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
                     <button
-                      onClick={handleDeepTruth}
-                      disabled={payingDeepTruth}
-                      className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base hover:scale-105 transition-all duration-300 disabled:opacity-60"
+                      type="submit"
+                      disabled={submittingReply}
+                      className="flex-1 py-2 rounded-2xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
                     >
-                      {payingDeepTruth ? "💳 Opening payment…" : `💰 Pay KES ${DEEP_TRUTH_PRICE_KES} & Unlock`}
+                      {submittingReply ? "Sending…" : "Send Reply"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplyText("");
+                        setVibeScore(5);
+                      }}
+                      className="px-4 py-2 rounded-2xl border border-slate-700 text-sm text-slate-300 hover:bg-slate-800 transition"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400">Replies are private — RANIA will notify them on WhatsApp.</p>
+                </form>
+              </div>
+            )}
+
+            {/* AWAITING HIDDEN */}
+            {phaseAwaitingHidden && (
+              <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800 text-sm text-slate-300">
+                ✅ Your reply has been saved. Waiting for them to write a hidden truth — you&apos;ll see a preview here
+                once they submit it.
+              </div>
+            )}
+
+            {/* PREVIEW / FULL HIDDEN */}
+            {(phasePreviewOnly || phaseFullHidden) && (
+              <div className="rounded-2xl p-4 bg-slate-900/80 border border-purple-400/20">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-pink-300">Hidden truth</div>
+                    <div className="text-xs text-slate-400">What they wrote for you</div>
+                  </div>
+                  <div className="text-xs text-slate-500">Private</div>
+                </div>
+
+                {/* display preview / full */}
+                <div className="rounded-xl p-4 bg-slate-950 border border-slate-800 text-pink-50 min-h-[64px]">
+                  {phaseFullHidden ? (
+                    <div className="whitespace-pre-wrap text-sm">{fullHiddenText}</div>
+                  ) : (
+                    <div className="whitespace-pre-wrap text-sm">{previewMasked}</div>
+                  )}
+                </div>
+
+                {/* Unlock CTA (only show when preview exists and locked) */}
+                {phasePreviewOnly && moment.isHiddenLocked && (
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                    <div className="text-sm text-slate-300">
+                      This is a short preview. To read the full message, unlock it now.
+                    </div>
+
+                    <button
+                      onClick={handleHiddenUnlock}
+                      disabled={unlockingHidden}
+                      className="w-full py-2 rounded-2xl bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
+                    >
+                      {unlockingHidden ? "Opening payment…" : `🔓 Unlock full truth — KES ${moment.hiddenUnlockPriceKes ?? HIDDEN_UNLOCK_PRICE_KES}`}
                     </button>
                   </div>
                 )}
 
-                {deepTruthLoading && (
-                  <div className="flex items-center justify-center gap-3 py-6">
-                    <div className="animate-spin text-3xl">✨</div>
-                    <p className="text-slate-300">Analyzing this moment…</p>
-                  </div>
+                {/* If preview exists and not locked (rare) show hint */}
+                {phasePreviewOnly && !moment.isHiddenLocked && (
+                  <div className="mt-3 text-sm text-slate-300">Full truth is available — refresh to load it.</div>
                 )}
 
-                {deepTruthError && (
-                  <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-4 text-sm text-red-200">
-                    ⚠️ {deepTruthError}
-                  </div>
-                )}
-
-                {deepTruth && moment && (
-                  <div className="space-y-4">
-                    <div className="rounded-lg bg-slate-950/60 border border-slate-800/60 p-5">
-                      <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-wrap">
-                        {deepTruth}
-                      </p>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-slate-100">
-                          📱 Deep Truth Share Card
-                        </span>
+                {/* Reaction / reply form (only after full hidden shown) */}
+                {phaseFullHidden && (
+                  <>
+                    <form onSubmit={handleReactionSubmit} className="mt-4 space-y-3">
+                      <label className="block text-sm font-semibold text-slate-200">
+                        Reply to their truth
+                      </label>
+                      <textarea
+                        value={reactionText}
+                        onChange={(e) => setReactionText(e.target.value)}
+                        rows={3}
+                        className="w-full rounded-lg bg-slate-950 border border-pink-400/30 px-3 py-2 text-sm text-pink-50 focus:outline-none"
+                        placeholder="How does this make you feel? Reply honestly…"
+                      />
+                      <div className="flex gap-3">
+                        <button
+                          type="submit"
+                          disabled={submittingReaction || !reactionText.trim()}
+                          className="flex-1 py-2 rounded-2xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
+                        >
+                          {submittingReaction ? "Sending…" : "Send reaction"}
+                        </button>
                         <button
                           type="button"
-                          onClick={() => setShowDeepTruthCard((v) => !v)}
-                          className="text-xs px-3 py-1 rounded-full border border-slate-600 text-slate-300 hover:bg-slate-700/50 transition"
+                          onClick={() => {
+                            setReactionText("");
+                          }}
+                          className="px-4 py-2 rounded-2xl border border-slate-700 text-sm text-slate-300 hover:bg-slate-800 transition"
                         >
-                          {showDeepTruthCard ? "Hide card" : "Show card"}
+                          Clear
                         </button>
                       </div>
-                      {showDeepTruthCard && (
-                        <DeepTruthCardCanvas
-                          teaser={moment.teaserText}
-                          hiddenText={hiddenFullText ?? ""}
-                          deepTruth={deepTruth}
-                          shareUrl={`${baseUrl}/m/${moment.shortCode}`}
-                        />
+                    </form>
+
+                    {/* share / moment card */}
+                    <div className="mt-4 border-t border-purple-400/20 pt-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-pink-100">Shareable card</div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setShowMomentCard((v) => !v)}
+                            className="text-xs px-3 py-1 rounded-full border border-pink-400/40 text-pink-200 hover:bg-pink-500/10 transition"
+                          >
+                            {showMomentCard ? "Hide" : "Preview"}
+                          </button>
+                          <button
+                            onClick={handleShareFullText}
+                            className="text-xs px-3 py-1 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 transition"
+                          >
+                            Resend / Share
+                          </button>
+                        </div>
+                      </div>
+
+                      {showMomentCard && (
+                        <div className="mt-3">
+                          <MomentCardCanvas
+                            teaser={moment.teaserText}
+                            hiddenText={fullHiddenText}
+                            replyText={reactionText || "[Their reaction]"}
+                            shareUrl={`${baseUrl}/m/${moment.shortCode}`}
+                          />
+                        </div>
                       )}
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
+            )}
+          </section>
 
-              {/* Share text */}
-              {hiddenFullText && (
-                <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-5 bg-gradient-to-br from-slate-800/30 to-slate-900/30 border border-slate-700/60 backdrop-blur-sm">
-                  <h2 className="font-bold text-lg sm:text-2xl text-slate-100 flex items-center gap-2">
-                    <span>📲</span> Share This Moment
-                  </h2>
-                  <textarea
-                    readOnly
-                    value={`I just unlocked a real moment on RANIA:\n\n"${hiddenFullText}"\n\nCreate yours: ${startUrl}`}
-                    rows={4}
-                    className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-xs sm:text-sm font-mono text-slate-300 resize-none"
+          {/* Right column: deep truth, tips, credits */}
+          <aside className="space-y-5">
+            {/* Deep truth */}
+            <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-pink-100 flex items-center gap-2">
+                    <span>🔬</span> Deep Breakdown
+                  </div>
+                  <div className="text-xs text-slate-400">Optional deeper take on this moment</div>
+                </div>
+                <div className="text-xs text-slate-500">KES {DEEP_TRUTH_PRICE_KES}</div>
+              </div>
+
+              {deepTruth && (
+                <div className="mt-3 text-sm text-pink-50 whitespace-pre-wrap border border-pink-400/20 rounded-md p-3 bg-slate-950">
+                  {deepTruth}
+                </div>
+              )}
+
+              {!deepTruth && !deepTruthLoading && (
+                <div className="mt-3 space-y-2">
+                  <label className="block text-xs text-slate-400">Email for receipt</label>
+                  <input
+                    type="email"
+                    value={deepTruthEmail}
+                    onChange={(e) => setDeepTruthEmail(e.target.value)}
+                    className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-200 focus:outline-none"
+                    placeholder="you@domain.com"
                   />
                   <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(
-                        `I just unlocked a real moment on RANIA:\n\n"${hiddenFullText}"\n\nCreate yours: ${startUrl}`,
-                      );
-                    }}
-                    className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base hover:scale-105 transition-all duration-300"
+                    onClick={handleDeepTruth}
+                    disabled={payingDeepTruth}
+                    className="w-full py-2 rounded-2xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
                   >
-                    📋 Copy to Share
+                    {payingDeepTruth ? "Opening payment…" : `Unlock Deep Breakdown — KES ${DEEP_TRUTH_PRICE_KES}`}
                   </button>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* FOOTER CTA */}
-          <div className="text-center py-6 sm:py-8">
-            <button
-              onClick={() => router.push("/moments/create")}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-purple-400/60 bg-slate-50/10 text-purple-200 font-bold text-sm hover:bg-slate-50/20 transition"
-            >
-              ← Create Your Own RANIA Moment
-            </button>
+              {deepTruthLoading && (
+                <div className="mt-3 text-sm text-pink-100">Analyzing…</div>
+              )}
+
+              {deepTruthError && <div className="mt-3 text-sm text-red-400">{deepTruthError}</div>}
+
+              {deepTruth && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-pink-100">Share deep truth</div>
+                    <button
+                      onClick={() => setShowDeepTruthCard((v) => !v)}
+                      className="text-xs px-3 py-1 rounded-full border border-pink-400/40 text-pink-200 hover:bg-pink-500/10 transition"
+                    >
+                      {showDeepTruthCard ? "Hide" : "Preview"}
+                    </button>
+                  </div>
+
+                  {showDeepTruthCard && (
+                    <div className="mt-3">
+                      <DeepTruthCardCanvas
+                        teaser={moment.teaserText}
+                        hiddenText={fullHiddenText}
+                        deepTruth={deepTruth}
+                        shareUrl={`${baseUrl}/m/${moment.shortCode}`}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Tips / small help */}
+            <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800 text-sm text-slate-300">
+              <div className="font-semibold text-slate-100 mb-2">Tips</div>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>Reply first — it keeps the conversation honest.</li>
+                <li>Previews don&apos;t show the full message. Unlock to see everything.</li>
+                <li>Unlocked truths are private — share consciously.</li>
+              </ul>
+            </div>
+
+            {/* small footer */}
+            <div className="rounded-2xl p-3 bg-slate-900/60 border border-slate-800 text-xs text-slate-400">
+              <div className="flex items-center justify-between">
+                <div>Need help? Reach the RANIA team</div>
+                <button
+                  onClick={() => router.push("/help")}
+                  className="text-xs px-2 py-1 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 transition"
+                >
+                  Help
+                </button>
+              </div>
+            </div>
+          </aside>
+        </main>
+
+        {/* share area when full hidden is available */}
+        {phaseFullHidden && (
+          <div className="rounded-2xl p-4 bg-slate-900/80 border border-pink-400/20">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-pink-100">Share this unlocked moment</div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleShareFullText}
+                  className="px-3 py-1 rounded-full bg-slate-800 text-xs text-white hover:scale-105 transition"
+                >
+                  Resend / Share
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`"${fullHiddenText}"`);
+                    setToast("Hidden text copied");
+                  }}
+                  className="px-3 py-1 rounded-full border border-slate-700 text-xs text-slate-200 hover:bg-slate-800 transition"
+                >
+                  Copy text
+                </button>
+              </div>
+            </div>
           </div>
+        )}
+
+        {/* small global CTA / back */}
+        <div className="text-center pt-2 pb-6">
+          <button
+            onClick={() => router.push("/moments/create")}
+            className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 rounded-full border border-purple-400/60 bg-slate-50/6 text-purple-100 font-bold text-xs sm:text-sm hover:bg-slate-50/12 transition"
+          >
+            ← Create Your Own RANIA Moment
+          </button>
         </div>
+
+        {/* toast */}
+        {toast && (
+          <div className="fixed right-6 bottom-6 z-50">
+            <div className="rounded-xl px-4 py-2 bg-slate-900/90 text-sm text-slate-100 border border-slate-800 shadow">
+              {toast}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
