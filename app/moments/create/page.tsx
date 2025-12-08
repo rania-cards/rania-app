@@ -59,6 +59,7 @@ const DELIVERY_OPTIONS: { value: RaniaDeliveryFormat; label: string }[] = [
 export default function CreateMomentPage() {
   const router = useRouter();
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const detailsRef = useRef<HTMLDivElement | null>(null);
 
   const [modeKey, setModeKey] = useState<RaniaModeKey>("BESTIE_TRUTH_CHAIN");
   const [language, setLanguage] = useState<RaniaLanguage>("en");
@@ -116,6 +117,13 @@ export default function CreateMomentPage() {
     setMomentId(null);
     setError(null);
   }, [modeKey, teaserText, language, tone]);
+
+  function handleModeChange(newMode: RaniaModeKey) {
+    setModeKey(newMode);
+    setTimeout(() => {
+      detailsRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 150);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -242,7 +250,7 @@ export default function CreateMomentPage() {
                       <button
                         key={m.key}
                         type="button"
-                        onClick={() => setModeKey(m.key)}
+                        onClick={() => handleModeChange(m.key)}
                         className={`group relative rounded-xl p-3 sm:p-4 text-left transition-all duration-300 ${
                           active
                             ? "bg-gradient-to-br from-purple-600/40 to-pink-600/30 border border-purple-400/60 shadow-lg shadow-purple-500/20 scale-105"
@@ -259,7 +267,7 @@ export default function CreateMomentPage() {
               </div>
 
               {/* Sender Info */}
-              <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 sm:p-6 space-y-4">
+              <div ref={detailsRef} className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 sm:p-6 space-y-4">
                 <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">Your Details</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <input type="text" placeholder="Name" value={senderName} onChange={(e) => setSenderName(e.target.value)} className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none text-white" />

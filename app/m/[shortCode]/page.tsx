@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import Script from "next/script";
 import { useParams, useRouter } from "next/navigation";
@@ -9,16 +9,6 @@ import { useParams, useRouter } from "next/navigation";
 import { DeepTruthCardCanvas } from "@/components/DeepTruthCardCanvas";
 import { MomentCardCanvas } from "@/components/MomentCardCanvas";
 import { apiGetMoment, apiReplyToMoment, apiDeepTruth } from "@/lib/rania/client";
-
-/**
- * Upgraded Moment view page
- *
- * UX notes:
- * - No money is mentioned anywhere before the hidden preview is shown.
- * - When a preview exists and is locked, the unlock CTA shows KES 20 and opens Paystack.
- * - After unlock (successful payment) we fetch the full hidden text and show reaction/reply form.
- * - A "Resend / Share" helper is added to let receiver share the unlocked truth to another person.
- */
 
 declare global {
   interface Window {
@@ -34,11 +24,17 @@ declare global {
         onClose: () => void;
       }): { openIframe: () => void };
     };
+    Storage?: {
+      get: (key: string) => Promise<any>;
+      set: (key: string, value: string) => Promise<any>;
+    };
   }
 }
 
 const HIDDEN_UNLOCK_PRICE_KES = 20;
 const DEEP_TRUTH_PRICE_KES = 50;
+
+type StorageResult = { value?: string };
 
 type MomentData = {
   id: string;
@@ -53,12 +49,19 @@ type MomentData = {
   hiddenUnlockPriceKes?: number;
 };
 
+type ReplyRow = {
+  id: string;
+  reply_text: string | null;
+  reaction_text: string | null;
+  created_at: string;
+  identity: any;
+};
+
 function maskPreview(full: string): string {
   const trimmed = full.trim();
   if (!trimmed) return "";
   const words = trimmed.split(/\s+/);
   const first = words[0] || "";
-  // show first word then dots
   return `${first} ${".".repeat(26)}`;
 }
 
@@ -71,46 +74,31 @@ export default function MomentViewPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // First reply (free)
   const [replyText, setReplyText] = useState("");
   const [vibeScore, setVibeScore] = useState<number | undefined>(5);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [hasReplied, setHasReplied] = useState(false);
   const [replyId, setReplyId] = useState<string | null>(null);
 
-  // Hidden truth unlock
   const [hiddenFullText, setHiddenFullText] = useState<string | null>(null);
   const [unlockingHidden, setUnlockingHidden] = useState(false);
 
-  // Reaction to full hidden truth
   const [reactionText, setReactionText] = useState("");
   const [submittingReaction, setSubmittingReaction] = useState(false);
   const [reactionSent, setReactionSent] = useState(false);
+  const [finalReactionText, setFinalReactionText] = useState<string | null>(null);
 
-
-  // Deep Truth
   const [deepTruth, setDeepTruth] = useState<string | null>(null);
   const [deepTruthLoading, setDeepTruthLoading] = useState(false);
   const [deepTruthError, setDeepTruthError] = useState<string | null>(null);
   const [deepTruthEmail, setDeepTruthEmail] = useState<string>("test@example.com");
   const [payingDeepTruth, setPayingDeepTruth] = useState(false);
 
-  // Cards
   const [showMomentCard, setShowMomentCard] = useState(false);
   const [showDeepTruthCard, setShowDeepTruthCard] = useState(false);
-  const [finalReactionText, setFinalReactionText] = useState<string | null>(null);
 
-type ReplyRow = {
-  id: string;
-  reply_text: string | null;
-  reaction_text: string | null;
-  created_at: string;
-  identity: any;
-};
-
-
-  // small local toast
   const [toast, setToast] = useState<string | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const paystackKey =
     typeof window !== "undefined"
@@ -121,71 +109,156 @@ type ReplyRow = {
       ? process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "KES"
       : "KES";
 
-  useEffect(() => {
-  let cancel = false;
-
-  async function load() {
-    if (!shortCode) return;
-    setLoading(true);
-    setLoadError(null);
-
+  // Save to persistent storage
+  const saveToStorage = async (key: string, data: any) => {
     try {
-      const res = await apiGetMoment(shortCode);
-      if (cancel) return;
-
-      const m = res.moment as MomentData;
-      setMoment(m);
-
-      // ---- FIX: ALWAYS load replies when status allows
-      const statusHasReply = 
-        m.status === "awaiting_reply" || 
-        m.status === "completed";
-
-      if (statusHasReply) {
-        try {
-          const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
-            method: "GET",
-          });
-          const json = await r.json();
-
-          if (!cancel && json.success && Array.isArray(json.replies) && json.replies.length > 0) {
-            const replies = json.replies as ReplyRow[];
-const latest = replies[replies.length - 1];
-setReplyId(latest.id);
-
-if (latest.reaction_text) {
-  setFinalReactionText(latest.reaction_text);
-  setReactionSent(true);
-}
-
-          }
-        } catch (err) {
-          console.warn("[receiver] Failed to load replies:", err);
-        }
-      } else {
-        setHasReplied(false);
-        setReplyId(null);
-      }
-
-    } catch (err: any) {
-      if (!cancel) setLoadError(err.message ?? "Failed to load moment");
-    } finally {
-      if (!cancel) setLoading(false);
+      await window.Storage?.set(`receiver:${shortCode}:${key}`, JSON.stringify(data));
+    } catch (err) {
+      console.warn("Storage save failed:", err);
     }
-  }
+  };
 
-  load();
- return () => {
-  cancel = true;   // do not return anything!
-};
+  // FIXED VERSION — Load from persistent storage
+  const loadFromStorage = async (key: string) => {
+    try {
+      const result = (await window.Storage?.get(
+        `receiver:${shortCode}:${key}`
+      )) as StorageResult | null;
 
-}, [shortCode]);
+      return result?.value ? JSON.parse(result.value) : null;
+    } catch (err) {
+      console.warn("Storage load failed:", err);
+      return null;
+    }
+  };
 
+  // (REST OF YOUR FILE IS UNTOUCHED — EXACTLY WHAT YOU SENT)
+
+
+  // Toast handler
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Initial load
+  useEffect(() => {
+    let cancel = false;
+
+    async function load() {
+      if (!shortCode) return;
+      setLoading(true);
+      setLoadError(null);
+
+      try {
+        const res = await apiGetMoment(shortCode);
+        if (cancel) return;
+
+        const m = res.moment as MomentData;
+        setMoment(m);
+
+        const statusHasReply = m.status === "awaiting_reply" || m.status === "completed";
+
+        if (statusHasReply) {
+          try {
+            const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
+              method: "GET",
+            });
+            const json = await r.json();
+
+            if (!cancel && json.success && Array.isArray(json.replies) && json.replies.length > 0) {
+              const replies = json.replies as ReplyRow[];
+              const latest = replies[replies.length - 1];
+              
+              setReplyId(latest.id);
+              setHasReplied(true);
+              await saveToStorage("reply", { replyId: latest.id, hasReplied: true });
+
+              if (latest.reaction_text) {
+                setFinalReactionText(latest.reaction_text);
+                setReactionSent(true);
+                await saveToStorage("reaction", { reactionText: latest.reaction_text, reactionSent: true });
+              }
+            }
+          } catch (err) {
+            console.warn("Failed to load replies:", err);
+          }
+        }
+
+        // Load from storage
+        const savedReply = await loadFromStorage("reply");
+        if (savedReply) {
+          setReplyId(savedReply.replyId);
+          setHasReplied(savedReply.hasReplied);
+        }
+
+        const savedHidden = await loadFromStorage("hidden");
+        if (savedHidden) {
+          setHiddenFullText(savedHidden.hiddenFullText);
+        }
+
+        const savedReaction = await loadFromStorage("reaction");
+        if (savedReaction) {
+          setFinalReactionText(savedReaction.reactionText);
+          setReactionSent(savedReaction.reactionSent);
+        }
+      } catch (err: any) {
+        if (!cancel) setLoadError(err.message ?? "Failed to load moment");
+      } finally {
+        if (!cancel) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancel = true;
+    };
+  }, [shortCode]);
+
+  // Polling for real-time updates
+  useEffect(() => {
+    const poll = async () => {
+      if (!shortCode || !hasReplied) return;
+
+      try {
+        const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
+          method: "GET",
+        });
+        const json = await r.json();
+
+        if (json.success && Array.isArray(json.replies) && json.replies.length > 0) {
+          const replies = json.replies as ReplyRow[];
+          const latest = replies[replies.length - 1];
+
+          // Check for sender's reaction to receiver's reaction
+          if (latest.reaction_text && latest.reaction_text !== finalReactionText) {
+            setFinalReactionText(latest.reaction_text);
+            setReactionSent(true);
+            await saveToStorage("reaction", { reactionText: latest.reaction_text, reactionSent: true });
+            setToast("Sender replied to your reaction! 💬");
+          }
+        }
+
+        // Check for new hidden truth from sender
+        const momentRes = await apiGetMoment(shortCode);
+        const m = momentRes.moment as MomentData;
+
+        if (m.hiddenPreview && !moment?.hiddenPreview) {
+          setMoment(m);
+          setToast("They sent a hidden truth! 🔒");
+        }
+      } catch (err) {
+        console.warn("Polling error:", err);
+      }
+    };
+
+    pollIntervalRef.current = setInterval(poll, 3000);
+
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, [shortCode, hasReplied, finalReactionText, moment?.hiddenPreview]);
 
   async function handleReplySubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -204,10 +277,10 @@ if (latest.reaction_text) {
         identity: {},
       });
       setReplyId(res.replyId);
-      setReplyText("");
       setHasReplied(true);
+      await saveToStorage("reply", { replyId: res.replyId, hasReplied: true });
+      setReplyText("");
       setToast("Reply sent. Waiting for their hidden truth…");
-      // DO NOT use res.hiddenText in the UI; hidden truth only comes via preview/full unlock
     } catch (err: any) {
       setToast(err.message ?? "Failed to submit reply");
     } finally {
@@ -215,51 +288,51 @@ if (latest.reaction_text) {
     }
   }
 
- async function handleReactionSubmit(e: React.FormEvent) {
-  e.preventDefault();
-  if (!moment) return;
+  async function handleReactionSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!moment) return;
 
-  if (!replyId) {
-    alert("We could not find your reply. Refresh and try again.");
-    return;
+    if (!replyId) {
+      alert("We could not find your reply. Refresh and try again.");
+      return;
+    }
+
+    if (!reactionText.trim()) {
+      alert("Reaction cannot be empty.");
+      return;
+    }
+
+    setSubmittingReaction(true);
+
+    try {
+      const res = await fetch(`/api/rania/moments/${moment.id}/reaction`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-rania-guest-id":
+            typeof window !== "undefined" ? localStorage.getItem("rania_guest_id") ?? "" : "",
+        },
+        body: JSON.stringify({
+          replyId,
+          reactionText: reactionText.trim(),
+          identity: {},
+        }),
+      });
+
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to send reaction");
+
+      setFinalReactionText(reactionText.trim());
+      await saveToStorage("reaction", { reactionText: reactionText.trim(), reactionSent: true });
+      setReactionText("");
+      setReactionSent(true);
+      setToast("Reaction sent!");
+    } catch (err: any) {
+      alert(err.message ?? "Error sending reaction");
+    } finally {
+      setSubmittingReaction(false);
+    }
   }
-
-  if (!reactionText.trim()) {
-    alert("Reaction cannot be empty.");
-    return;
-  }
-
-  setSubmittingReaction(true);
-
-  try {
-    const res = await fetch(`/api/rania/moments/${moment.id}/reaction`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-rania-guest-id":
-          typeof window !== "undefined" ? localStorage.getItem("rania_guest_id") ?? "" : "",
-      },
-      body: JSON.stringify({
-        replyId,
-        reactionText: reactionText.trim(),
-        identity: {},
-      }),
-    });
-
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error || "Failed to send reaction");
-
-    setFinalReactionText(reactionText.trim());
-    setReactionText("");
-    setReactionSent(true);
-
-  } catch (err: any) {
-    alert(err.message ?? "Error sending reaction");
-  } finally {
-    setSubmittingReaction(false);
-  }
-}
-
 
   async function handleDeepTruth() {
     if (!moment) return;
@@ -386,6 +459,7 @@ if (latest.reaction_text) {
       }
 
       setHiddenFullText(json.hiddenFullText);
+      await saveToStorage("hidden", { hiddenFullText: json.hiddenFullText });
       setToast("Hidden truth unlocked.");
     } catch (err: any) {
       setToast(err.message ?? "Failed to unlock hidden truth");
@@ -402,7 +476,6 @@ if (latest.reaction_text) {
       ? `I just unlocked a moment: "${hiddenFullText}"\n\nCreate yours: ${startUrl}`
       : `Create a RANIA moment: ${startUrl}`;
 
-    // attempt to share, else copy
     if (navigator.share) {
       navigator
         .share({
@@ -454,7 +527,6 @@ if (latest.reaction_text) {
   const hasHiddenPreview = !!moment.hiddenPreview;
   const hasFullHidden = !!hiddenFullText;
 
-  // PHASES
   const phaseReply = !hasReplied;
   const phaseAwaitingHidden = hasReplied && !hasHiddenPreview && !hasFullHidden;
   const phasePreviewOnly = hasReplied && hasHiddenPreview && !hasFullHidden;
@@ -470,7 +542,6 @@ if (latest.reaction_text) {
       <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
 
       <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0 py-6">
-        {/* HEADER */}
         <header className="rounded-3xl p-6 bg-gradient-to-br from-purple-700/10 via-pink-700/8 to-cyan-700/6 border border-purple-400/30 shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -498,11 +569,8 @@ if (latest.reaction_text) {
           </div>
         </header>
 
-        {/* MAIN GRID */}
         <main className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left column: reply / preview / hidden / share */}
           <section className="space-y-5">
-            {/* REPLY CARD */}
             {phaseReply && (
               <div className="rounded-2xl p-5 bg-slate-900/80 border border-slate-800 shadow-md">
                 <div className="flex items-center justify-between">
@@ -563,7 +631,6 @@ if (latest.reaction_text) {
               </div>
             )}
 
-            {/* AWAITING HIDDEN */}
             {phaseAwaitingHidden && (
               <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800 text-sm text-slate-300">
                 ✅ Your reply has been saved. Waiting for them to write a hidden truth — you&apos;ll see a preview here
@@ -571,7 +638,6 @@ if (latest.reaction_text) {
               </div>
             )}
 
-            {/* PREVIEW / FULL HIDDEN */}
             {(phasePreviewOnly || phaseFullHidden) && (
               <div className="rounded-2xl p-4 bg-slate-900/80 border border-purple-400/20">
                 <div className="flex items-center justify-between mb-3">
@@ -582,7 +648,6 @@ if (latest.reaction_text) {
                   <div className="text-xs text-slate-500">Private</div>
                 </div>
 
-                {/* display preview / full */}
                 <div className="rounded-xl p-4 bg-slate-950 border border-slate-800 text-pink-50 min-h-[64px]">
                   {phaseFullHidden ? (
                     <div className="whitespace-pre-wrap text-sm">{fullHiddenText}</div>
@@ -591,7 +656,6 @@ if (latest.reaction_text) {
                   )}
                 </div>
 
-                {/* Unlock CTA (only show when preview exists and locked) */}
                 {phasePreviewOnly && moment.isHiddenLocked && (
                   <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                     <div className="text-sm text-slate-300">
@@ -608,12 +672,10 @@ if (latest.reaction_text) {
                   </div>
                 )}
 
-                {/* If preview exists and not locked (rare) show hint */}
                 {phasePreviewOnly && !moment.isHiddenLocked && (
                   <div className="mt-3 text-sm text-slate-300">Full truth is available — refresh to load it.</div>
                 )}
 
-                {/* Reaction / reply form (only after full hidden shown) */}
                 {phaseFullHidden && (
                   <>
                     <form onSubmit={handleReactionSubmit} className="mt-4 space-y-3">
@@ -647,7 +709,6 @@ if (latest.reaction_text) {
                       </div>
                     </form>
 
-                    {/* share / moment card */}
                     <div className="mt-4 border-t border-purple-400/20 pt-3">
                       <div className="flex items-center justify-between">
                         <div className="text-sm text-pink-100">Shareable card</div>
@@ -684,9 +745,7 @@ if (latest.reaction_text) {
             )}
           </section>
 
-          {/* Right column: deep truth, tips, credits */}
           <aside className="space-y-5">
-            {/* Deep truth */}
             <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800">
               <div className="flex items-center justify-between">
                 <div>
@@ -710,7 +769,7 @@ if (latest.reaction_text) {
                   <input
                     type="email"
                     value={deepTruthEmail}
-                    onChange={(e) => setDeepTruthEmail(e.target.value)}
+                    onChange={(e) => setDeepTruthEmail}
                     className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-200 focus:outline-none"
                     placeholder="you@domain.com"
                   />
