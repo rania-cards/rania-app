@@ -31,11 +31,11 @@ export async function GET(
     if (!moment) throw new Error("Moment not found");
 
     // 2) Fetch replies for this moment
-    const { data: replies, error: repliesError } = await supabaseAdmin
-      .from("rania_replies")
-      .select("id, reply_text, reaction_text, created_at")
-      .eq("moment_id", moment.id)
-      .order("created_at", { ascending: true });
+   const { data: replies, error: repliesError } = await supabaseAdmin
+  .from("rania_replies")
+  .select("id, reply_text, reaction_text, sender_response_text, created_at")
+  .eq("moment_id", moment.id)
+  .order("created_at", { ascending: true });
 
     if (repliesError) throw repliesError;
 
@@ -58,3 +58,6 @@ export async function GET(
     );
   }
 }
+
+
+

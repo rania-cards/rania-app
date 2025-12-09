@@ -53,6 +53,7 @@ type ReplyRow = {
   id: string;
   reply_text: string | null;
   reaction_text: string | null;
+  sender_response_text: string | null;
   created_at: string;
   identity: any;
 };
@@ -82,11 +83,15 @@ export default function MomentViewPage() {
 
   const [hiddenFullText, setHiddenFullText] = useState<string | null>(null);
   const [unlockingHidden, setUnlockingHidden] = useState(false);
+  const [hasUnlockedHidden, setHasUnlockedHidden] = useState(false);
 
   const [reactionText, setReactionText] = useState("");
   const [submittingReaction, setSubmittingReaction] = useState(false);
   const [reactionSent, setReactionSent] = useState(false);
   const [finalReactionText, setFinalReactionText] = useState<string | null>(null);
+
+  // Sender's response to receiver's reaction
+  const [senderResponseText, setSenderResponseText] = useState<string | null>(null);
 
   const [deepTruth, setDeepTruth] = useState<string | null>(null);
   const [deepTruthLoading, setDeepTruthLoading] = useState(false);
@@ -118,7 +123,7 @@ export default function MomentViewPage() {
     }
   };
 
-  // FIXED VERSION — Load from persistent storage
+  // Load from persistent storage
   const loadFromStorage = async (key: string) => {
     try {
       const result = (await window.Storage?.get(
@@ -131,9 +136,6 @@ export default function MomentViewPage() {
       return null;
     }
   };
-
-  // (REST OF YOUR FILE IS UNTOUCHED — EXACTLY WHAT YOU SENT)
-
 
   // Toast handler
   useEffect(() => {
@@ -170,7 +172,7 @@ export default function MomentViewPage() {
             if (!cancel && json.success && Array.isArray(json.replies) && json.replies.length > 0) {
               const replies = json.replies as ReplyRow[];
               const latest = replies[replies.length - 1];
-              
+
               setReplyId(latest.id);
               setHasReplied(true);
               await saveToStorage("reply", { replyId: latest.id, hasReplied: true });
@@ -179,6 +181,12 @@ export default function MomentViewPage() {
                 setFinalReactionText(latest.reaction_text);
                 setReactionSent(true);
                 await saveToStorage("reaction", { reactionText: latest.reaction_text, reactionSent: true });
+              }
+
+              // Check for sender's response
+              if (latest.sender_response_text) {
+                setSenderResponseText(latest.sender_response_text);
+                await saveToStorage("senderResponse", { senderResponseText: latest.sender_response_text });
               }
             }
           } catch (err) {
@@ -196,12 +204,18 @@ export default function MomentViewPage() {
         const savedHidden = await loadFromStorage("hidden");
         if (savedHidden) {
           setHiddenFullText(savedHidden.hiddenFullText);
+          setHasUnlockedHidden(true);
         }
 
         const savedReaction = await loadFromStorage("reaction");
         if (savedReaction) {
           setFinalReactionText(savedReaction.reactionText);
           setReactionSent(savedReaction.reactionSent);
+        }
+
+        const savedSenderResponse = await loadFromStorage("senderResponse");
+        if (savedSenderResponse) {
+          setSenderResponseText(savedSenderResponse.senderResponseText);
         }
       } catch (err: any) {
         if (!cancel) setLoadError(err.message ?? "Failed to load moment");
@@ -231,12 +245,11 @@ export default function MomentViewPage() {
           const replies = json.replies as ReplyRow[];
           const latest = replies[replies.length - 1];
 
-          // Check for sender's reaction to receiver's reaction
-          if (latest.reaction_text && latest.reaction_text !== finalReactionText) {
-            setFinalReactionText(latest.reaction_text);
-            setReactionSent(true);
-            await saveToStorage("reaction", { reactionText: latest.reaction_text, reactionSent: true });
-            setToast("Sender replied to your reaction! 💬");
+          // Check for sender's response to receiver's reaction
+          if (latest.sender_response_text && latest.sender_response_text !== senderResponseText) {
+            setSenderResponseText(latest.sender_response_text);
+            await saveToStorage("senderResponse", { senderResponseText: latest.sender_response_text });
+            setToast("Sender replied! 💬");
           }
         }
 
@@ -258,7 +271,7 @@ export default function MomentViewPage() {
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [shortCode, hasReplied, finalReactionText, moment?.hiddenPreview]);
+  }, [shortCode, hasReplied, senderResponseText, moment?.hiddenPreview]);
 
   async function handleReplySubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -459,7 +472,8 @@ export default function MomentViewPage() {
       }
 
       setHiddenFullText(json.hiddenFullText);
-      await saveToStorage("hidden", { hiddenFullText: json.hiddenFullText });
+      setHasUnlockedHidden(true);
+      await saveToStorage("hidden", { hiddenFullText: json.hiddenFullText, hasUnlockedHidden: true });
       setToast("Hidden truth unlocked.");
     } catch (err: any) {
       setToast(err.message ?? "Failed to unlock hidden truth");
@@ -574,7 +588,7 @@ export default function MomentViewPage() {
             {phaseReply && (
               <div className="rounded-2xl p-5 bg-slate-900/80 border border-slate-800 shadow-md">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-100">💬 Reply </h2>
+                  <h2 className="text-lg font-bold text-slate-100">💬 Reply (free)</h2>
                   <div className="text-xs text-slate-400">First reply unlocks the preview flow</div>
                 </div>
 
@@ -664,10 +678,10 @@ export default function MomentViewPage() {
 
                     <button
                       onClick={handleHiddenUnlock}
-                      disabled={unlockingHidden}
+                      disabled={unlockingHidden || hasUnlockedHidden}
                       className="w-full py-2 rounded-2xl bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
                     >
-                      {unlockingHidden ? "Opening payment…" : `🔓 Unlock full truth — KES ${moment.hiddenUnlockPriceKes ?? HIDDEN_UNLOCK_PRICE_KES}`}
+                      {hasUnlockedHidden ? "✓ Already unlocked" : unlockingHidden ? "Opening payment…" : `🔓 Unlock full truth — KES ${moment.hiddenUnlockPriceKes ?? HIDDEN_UNLOCK_PRICE_KES}`}
                     </button>
                   </div>
                 )}
@@ -709,6 +723,18 @@ export default function MomentViewPage() {
                       </div>
                     </form>
 
+                    {/* SENDER'S RESPONSE SECTION */}
+                    {senderResponseText && (
+                      <div className="mt-4 border-t border-purple-400/20 pt-4 space-y-3">
+                        <div className="space-y-2">
+                          <div className="text-[11px] uppercase font-semibold text-cyan-300">Their response to you</div>
+                          <div className="rounded-lg bg-cyan-950/40 border border-cyan-400/30 p-3">
+                            <p className="text-sm text-cyan-50 leading-relaxed">{senderResponseText}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-4 border-t border-purple-400/20 pt-3">
                       <div className="flex items-center justify-between">
                         <div className="text-sm text-pink-100">Shareable card</div>
@@ -719,6 +745,7 @@ export default function MomentViewPage() {
                           >
                             {showMomentCard ? "Hide" : "Preview"}
                           </button>
+                        
                           <button
                             onClick={handleShareFullText}
                             className="text-xs px-3 py-1 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 transition"

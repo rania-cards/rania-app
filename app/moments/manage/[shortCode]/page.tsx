@@ -21,6 +21,10 @@ declare global {
         onClose: () => void;
       }): { openIframe: () => void };
     };
+    Storage?: {
+      set: (key: string, value: string) => Promise<any>;
+      get: (key: string) => Promise<{ value?: string } | any>;
+    };
   }
 }
 
@@ -41,6 +45,7 @@ type ManageMomentData = {
 };
 
 const POLISH_PRICE_KES = 20;
+const MAX_FREE_POLISH_ATTEMPTS = 3;
 
 export default function ManageMomentPage() {
   const params = useParams<{ shortCode: string }>();
@@ -67,6 +72,9 @@ export default function ManageMomentPage() {
   const [polishError, setPolishError] = useState<string | null>(null);
   const [polishEmail, setPolishEmail] = useState("");
 
+  // Number of times we've polished this hidden truth for this moment
+  const [polishAttempts, setPolishAttempts] = useState(0);
+
   // Toast
   const [toast, setToast] = useState<string | null>(null);
 
@@ -85,7 +93,10 @@ export default function ManageMomentPage() {
   // Save to persistent storage
   const saveToStorage = async (key: string, data: any) => {
     try {
-      await window.Storage?.set(`sender:${shortCode}:${key}`, JSON.stringify(data));
+      await window.Storage?.set(
+        `sender:${shortCode}:${key}`,
+        JSON.stringify(data),
+      );
     } catch (err) {
       console.warn("Storage save failed:", err);
     }
@@ -103,7 +114,7 @@ export default function ManageMomentPage() {
   };
 
   // Toast handler
-  useEffect(() => {
+   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
@@ -130,24 +141,33 @@ export default function ManageMomentPage() {
           hiddenUnlockPriceKes: m.hiddenUnlockPriceKes,
         });
 
-        const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
-          method: "GET",
-        });
+        const r = await fetch(
+          `/api/rania/moments/by-code/${shortCode}/replies`,
+          {
+            method: "GET",
+          },
+        );
         const json = await r.json();
         if (!cancelled && json.success) {
           setReplies(json.replies as ReplyRow[]);
 
-          // Load latest reaction from receiver
           if (json.replies.length > 0) {
             const latest = json.replies[json.replies.length - 1];
             if (latest.reaction_text) {
               setReceiverReaction(latest.reaction_text);
-              await saveToStorage("reaction", { reactionText: latest.reaction_text });
+              await saveToStorage("reaction", {
+                reactionText: latest.reaction_text,
+              });
+            }
+            if (latest.sender_response_text) {
+              setSenderResponse(latest.sender_response_text);
+              await saveToStorage("response", {
+                responseText: latest.sender_response_text,
+              });
             }
           }
         }
 
-        // Load from storage
         const savedTruth = await loadFromStorage("truth");
         if (savedTruth) {
           setFullHiddenText(savedTruth.hiddenFullText);
@@ -175,27 +195,38 @@ export default function ManageMomentPage() {
       cancelled = true;
     };
   }, [shortCode]);
-
   // Polling for real-time updates
   useEffect(() => {
     const poll = async () => {
       if (!shortCode) return;
 
       try {
-        const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
-          method: "GET",
-        });
+        const r = await fetch(
+          `/api/rania/moments/by-code/${shortCode}/replies`,
+          {
+            method: "GET",
+          },
+        );
         const json = await r.json();
 
-        if (json.success && Array.isArray(json.replies) && json.replies.length > 0) {
+        if (
+          json.success &&
+          Array.isArray(json.replies) &&
+          json.replies.length > 0
+        ) {
           setReplies(json.replies as ReplyRow[]);
 
           const latest = json.replies[json.replies.length - 1];
 
           // Check for new receiver reaction
-          if (latest.reaction_text && latest.reaction_text !== receiverReaction) {
+          if (
+            latest.reaction_text &&
+            latest.reaction_text !== receiverReaction
+          ) {
             setReceiverReaction(latest.reaction_text);
-            await saveToStorage("reaction", { reactionText: latest.reaction_text });
+            await saveToStorage("reaction", {
+              reactionText: latest.reaction_text,
+            });
             setToast("Receiver reacted to your truth! 💬");
           }
         }
@@ -210,6 +241,59 @@ export default function ManageMomentPage() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, [shortCode, receiverReaction]);
+
+    useEffect(() => {
+    const poll = async () => {
+      if (!shortCode) return;
+      try {
+        const r = await fetch(
+          `/api/rania/moments/by-code/${shortCode}/replies`,
+          {
+            method: "GET",
+          },
+        );
+        const json = await r.json();
+
+        if (
+          json.success &&
+          Array.isArray(json.replies) &&
+          json.replies.length > 0
+        ) {
+          setReplies(json.replies as ReplyRow[]);
+          const latest = json.replies[json.replies.length - 1];
+
+          if (
+            latest.reaction_text &&
+            latest.reaction_text !== receiverReaction
+          ) {
+            setReceiverReaction(latest.reaction_text);
+            await saveToStorage("reaction", {
+              reactionText: latest.reaction_text,
+            });
+            setToast("Receiver reacted to your truth! 💬");
+          }
+
+          if (
+            latest.sender_response_text &&
+            latest.sender_response_text !== senderResponse
+          ) {
+            setSenderResponse(latest.sender_response_text);
+            await saveToStorage("response", {
+              responseText: latest.sender_response_text,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Polling error:", err);
+      }
+    };
+
+    pollIntervalRef.current = setInterval(poll, 3000);
+
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, [shortCode, receiverReaction, senderResponse]);
 
   async function callPolishAPI(text: string) {
     setIsPolishing(true);
@@ -271,13 +355,14 @@ export default function ManageMomentPage() {
         void callPolishAPI(fullHiddenText.trim());
       },
       onClose: function () {
-        // User closed payment modal
+        // closed
       },
     });
 
     handler.openIframe();
   }
 
+  
   async function handleSaveHidden(e: React.FormEvent) {
     e.preventDefault();
     if (!moment) return;
@@ -302,8 +387,10 @@ export default function ManageMomentPage() {
         throw new Error(json.error || "Failed to save hidden truth");
       }
 
-      // Save to storage and mark as submitted
-      await saveToStorage("truth", { hiddenFullText: fullHiddenText.trim(), truthSubmitted: true });
+      await saveToStorage("truth", {
+        hiddenFullText: fullHiddenText.trim(),
+        truthSubmitted: true,
+      });
       setTruthSubmitted(true);
 
       setMoment((prev) =>
@@ -335,9 +422,7 @@ export default function ManageMomentPage() {
     }
 
     setSubmittingResponse(true);
-
     try {
-      // Get the first reply to attach response to
       if (replies.length === 0) {
         setToast("No replies found to respond to.");
         setSubmittingResponse(false);
@@ -346,24 +431,31 @@ export default function ManageMomentPage() {
 
       const firstReply = replies[0];
 
-      const res = await fetch(`/api/rania/moments/${moment.id}/reaction`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-rania-guest-id":
-            typeof window !== "undefined" ? localStorage.getItem("rania_guest_id") ?? "" : "",
+      const res = await fetch(
+        `/api/rania/moments/${moment.id}/sender-response`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-rania-guest-id":
+              typeof window !== "undefined"
+                ? localStorage.getItem("rania_guest_id") ?? ""
+                : "",
+          },
+          body: JSON.stringify({
+            replyId: firstReply.id,
+            senderResponseText: senderResponse.trim(),
+            identity: {},
+          }),
         },
-        body: JSON.stringify({
-          replyId: firstReply.id,
-          reactionText: senderResponse.trim(),
-          identity: {},
-        }),
-      });
+      );
 
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to send response");
 
-      await saveToStorage("response", { responseText: senderResponse.trim() });
+      await saveToStorage("response", {
+        responseText: senderResponse.trim(),
+      });
       setSenderResponse("");
       setToast("Response sent!");
     } catch (err: any) {
@@ -418,27 +510,36 @@ export default function ManageMomentPage() {
     );
   }
 
+  const remainingFreePolish = Math.max(
+    0,
+    MAX_FREE_POLISH_ATTEMPTS - polishAttempts,
+  );
+
   return (
     <>
       <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
 
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
+          <div
+            className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl animate-pulse"
+            style={{ animationDelay: "1s" }}
+          />
         </div>
 
         <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-6 sm:space-y-8">
           <div className="mb-8 sm:mb-12">
             <div className="space-y-3">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight">
-                Manage your<br />
+                Manage your
+                <br />
                 <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
                   emotional moment
                 </span>
               </h1>
               <p className="text-base sm:text-lg text-slate-300 max-w-2xl">
-                They replied. Now share your real truth and reveal the full message they sent.
+                They replied. Now share your real truth and respond to how they reacted.
               </p>
             </div>
           </div>
@@ -490,20 +591,26 @@ export default function ManageMomentPage() {
                       <span>🔒</span> Your Full Truth
                     </h2>
                     <p className="text-sm text-slate-400">
-                      Write what you really meant. They&apos;ll see a preview and can unlock for KES 20.
+                      Write what you really meant. They see a preview and can unlock for KES 20, then read this full message.
                     </p>
                   </div>
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-3">
-                      <label className="text-sm font-bold text-slate-100">What&apos;s the real truth?</label>
+                      <label className="text-sm font-bold text-slate-100">
+                        What&apos;s the real truth?
+                      </label>
                       <button
                         type="button"
                         onClick={handlePolish}
                         disabled={isPolishing || !fullHiddenText.trim()}
                         className="text-xs px-3 py-1 rounded-full bg-pink-500/20 border border-pink-400/50 text-pink-200 hover:bg-pink-500/30 transition disabled:opacity-50"
                       >
-                        {isPolishing ? "✨ Polishing…" : `✨ Polish · KES ${POLISH_PRICE_KES}`}
+                        {isPolishing
+                          ? "✨ Polishing…"
+                          : polishAttempts < MAX_FREE_POLISH_ATTEMPTS
+                          ? `✨ Polish (free ${MAX_FREE_POLISH_ATTEMPTS - polishAttempts} left)`
+                          : `✨ Polish · KES ${POLISH_PRICE_KES}`}
                       </button>
                     </div>
                     <textarea
@@ -515,10 +622,16 @@ export default function ManageMomentPage() {
                     />
                   </div>
 
+                  <p className="text-[11px] text-slate-400">
+                    {polishAttempts < MAX_FREE_POLISH_ATTEMPTS
+                      ? `You have ${MAX_FREE_POLISH_ATTEMPTS - polishAttempts} free polish attempt(s) left. After that, polish costs KES ${POLISH_PRICE_KES} each time.`
+                      : `All free polish attempts used. Polishing now costs KES ${POLISH_PRICE_KES} each time.`}
+                  </p>
+
                   {fullHiddenText.trim() && (
                     <div className="space-y-2 rounded-lg bg-slate-950/40 border border-slate-800/60 p-4">
                       <label className="text-xs font-bold text-slate-100 block">
-                        Email for polish receipt (if using)
+                        Email for polish receipt (if using paid polish)
                       </label>
                       <input
                         type="email"
@@ -528,7 +641,7 @@ export default function ManageMomentPage() {
                         className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition"
                       />
                       <p className="text-xs text-slate-500">
-                        Required only if you use &quot;Polish with AI&quot; feature.
+                        Required only if you use the paid &quot;Polish with RANIA&quot; after free attempts.
                       </p>
                     </div>
                   )}
@@ -548,7 +661,7 @@ export default function ManageMomentPage() {
                   </button>
 
                   <p className="text-center text-xs text-slate-400">
-                    Tip: Write raw, then polish it. Make them feel like it was worth unlocking.
+                    Tip: Write raw first, then polish. Make their unlock feel worth it.
                   </p>
                 </div>
               ) : (
@@ -565,8 +678,12 @@ export default function ManageMomentPage() {
 
                   {receiverReaction && (
                     <div className="rounded-lg bg-slate-950/60 border border-pink-400/30 p-4">
-                      <div className="text-xs text-slate-400 font-semibold mb-2">THEIR REACTION:</div>
-                      <p className="text-sm text-pink-50 leading-relaxed">{receiverReaction}</p>
+                      <div className="text-xs text-slate-400 font-semibold mb-2">
+                        THEIR REACTION:
+                      </div>
+                      <p className="text-sm text-pink-50 leading-relaxed">
+                        {receiverReaction}
+                      </p>
                     </div>
                   )}
 
@@ -608,7 +725,9 @@ export default function ManageMomentPage() {
             <div className="space-y-6">
               {/* Status Card */}
               <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-4 bg-gradient-to-br from-slate-800/30 to-slate-900/30 border border-slate-700/60 backdrop-blur-sm">
-                <h2 className="font-bold text-lg sm:text-xl text-slate-100">📊 Status</h2>
+                <h2 className="font-bold text-lg sm:text-xl text-slate-100">
+                  📊 Status
+                </h2>
                 <div className="space-y-3">
                   <div className="rounded-lg bg-slate-950/60 border border-slate-800/60 p-4">
                     <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
@@ -620,31 +739,55 @@ export default function ManageMomentPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs font-semibold text-slate-300">Timeline:</div>
+                    <div className="text-xs font-semibold text-slate-300">
+                      Timeline:
+                    </div>
                     <div className="space-y-2 text-xs text-slate-400">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-green-500/30 border border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-300">✓</div>
+                        <div className="w-6 h-6 rounded-full bg-green-500/30 border border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-300">
+                          ✓
+                        </div>
                         <span>You created the moment</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-green-500/30 border border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-300">✓</div>
+                        <div className="w-6 h-6 rounded-full bg-green-500/30 border border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-300">
+                          {replies.length > 0 ? "✓" : "○"}
+                        </div>
                         <span>They replied ({replies.length})</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${truthSubmitted ? 'bg-green-500/30 border-green-500/50 text-green-300' : 'bg-yellow-500/30 border-yellow-500/50 text-yellow-300'}`}>
-                          {truthSubmitted ? '✓' : '⟳'}
+                        <div
+                          className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${
+                            truthSubmitted
+                              ? "bg-green-500/30 border-green-500/50 text-green-300"
+                              : "bg-yellow-500/30 border-yellow-500/50 text-yellow-300"
+                          }`}
+                        >
+                          {truthSubmitted ? "✓" : "⟳"}
                         </div>
                         <span>You reveal the truth</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${receiverReaction ? 'bg-green-500/30 border-green-500/50 text-green-300' : 'bg-slate-700/30 border-slate-700/50 text-slate-500'}`}>
-                          {receiverReaction ? '✓' : '○'}
+                        <div
+                          className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${
+                            receiverReaction
+                              ? "bg-green-500/30 border-green-500/50 text-green-300"
+                              : "bg-slate-700/30 border-slate-700/50 text-slate-500"
+                          }`}
+                        >
+                          {receiverReaction ? "✓" : "○"}
                         </div>
                         <span>They react</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${senderResponse.trim() ? 'bg-green-500/30 border-green-500/50 text-green-300' : 'bg-slate-700/30 border-slate-700/50 text-slate-500'}`}>
-                          {senderResponse.trim() ? '✓' : '○'}
+                        <div
+                          className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${
+                            senderResponse.trim()
+                              ? "bg-green-500/30 border-green-500/50 text-green-300"
+                              : "bg-slate-700/30 border-slate-700/50 text-slate-500"
+                          }`}
+                        >
+                          {senderResponse.trim() ? "✓" : "○"}
                         </div>
                         <span>You respond</span>
                       </div>
@@ -673,10 +816,10 @@ export default function ManageMomentPage() {
                   <span>💡</span> Pro Tips
                 </h3>
                 <ul className="text-xs text-slate-300 space-y-2">
-                  <li>• Write your raw truth first</li>
-                  <li>• Use &quot;Polish with AI&quot; to make it profound</li>
-                  <li>• They&apos;ll see a teaser + pay KES 20 to unlock</li>
-                  <li>• Respond to their reaction to keep the conversation going</li>
+                  <li>• Write your raw truth first.</li>
+                  <li>• Use free polish attempts wisely before paying.</li>
+                  <li>• Your words should feel worth unlocking for them.</li>
+                  <li>• Respond to their reaction to close the emotional loop.</li>
                 </ul>
               </div>
             </div>
