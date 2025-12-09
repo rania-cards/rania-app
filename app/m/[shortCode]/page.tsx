@@ -574,7 +574,7 @@ export default function MomentViewPage() {
             {phaseReply && (
               <div className="rounded-2xl p-5 bg-slate-900/80 border border-slate-800 shadow-md">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-100">💬 Reply (free)</h2>
+                  <h2 className="text-lg font-bold text-slate-100">💬 Reply </h2>
                   <div className="text-xs text-slate-400">First reply unlocks the preview flow</div>
                 </div>
 
