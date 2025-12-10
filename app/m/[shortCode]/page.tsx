@@ -47,6 +47,8 @@ type MomentData = {
   hiddenPreview?: string;
   isHiddenLocked?: boolean;
   hiddenUnlockPriceKes?: number;
+  clueText?: string | null;
+  guessText?: string | null;
 };
 
 type ReplyRow = {
@@ -81,6 +83,10 @@ export default function MomentViewPage() {
   const [hasReplied, setHasReplied] = useState(false);
   const [replyId, setReplyId] = useState<string | null>(null);
 
+  const [guessText, setGuessText] = useState("");
+  const [submittingGuess, setSubmittingGuess] = useState(false);
+  const [guessSubmitted, setGuessSubmitted] = useState(false);
+
   const [hiddenFullText, setHiddenFullText] = useState<string | null>(null);
   const [unlockingHidden, setUnlockingHidden] = useState(false);
   const [hasUnlockedHidden, setHasUnlockedHidden] = useState(false);
@@ -90,7 +96,6 @@ export default function MomentViewPage() {
   const [reactionSent, setReactionSent] = useState(false);
   const [finalReactionText, setFinalReactionText] = useState<string | null>(null);
 
-  // Sender's response to receiver's reaction
   const [senderResponseText, setSenderResponseText] = useState<string | null>(null);
 
   const [deepTruth, setDeepTruth] = useState<string | null>(null);
@@ -114,22 +119,22 @@ export default function MomentViewPage() {
       ? process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "KES"
       : "KES";
 
-  // Save to persistent storage
   const saveToStorage = async (key: string, data: any) => {
     try {
-      await window.Storage?.set(`receiver:${shortCode}:${key}`, JSON.stringify(data));
+      await window.Storage?.set(
+        `receiver:${shortCode}:${key}`,
+        JSON.stringify(data),
+      );
     } catch (err) {
       console.warn("Storage save failed:", err);
     }
   };
 
-  // Load from persistent storage
   const loadFromStorage = async (key: string) => {
     try {
       const result = (await window.Storage?.get(
-        `receiver:${shortCode}:${key}`
+        `receiver:${shortCode}:${key}`,
       )) as StorageResult | null;
-
       return result?.value ? JSON.parse(result.value) : null;
     } catch (err) {
       console.warn("Storage load failed:", err);
@@ -137,7 +142,6 @@ export default function MomentViewPage() {
     }
   };
 
-  // Toast handler
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3500);
@@ -157,36 +161,54 @@ export default function MomentViewPage() {
         const res = await apiGetMoment(shortCode);
         if (cancel) return;
 
-        const m = res.moment as MomentData;
+        const m = res.moment as any as MomentData;
         setMoment(m);
 
-        const statusHasReply = m.status === "awaiting_reply" || m.status === "completed";
+        const statusHasReply =
+          m.status === "awaiting_clue" ||
+          m.status === "clue_sent" ||
+          m.status === "guess_submitted" ||
+          m.status === "truth_ready" ||
+          m.status === "completed";
 
         if (statusHasReply) {
           try {
-            const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
-              method: "GET",
-            });
+            const r = await fetch(
+              `/api/rania/moments/by-code/${shortCode}/replies`,
+              { method: "GET" },
+            );
             const json = await r.json();
 
-            if (!cancel && json.success && Array.isArray(json.replies) && json.replies.length > 0) {
+            if (
+              !cancel &&
+              json.success &&
+              Array.isArray(json.replies) &&
+              json.replies.length > 0
+            ) {
               const replies = json.replies as ReplyRow[];
               const latest = replies[replies.length - 1];
 
               setReplyId(latest.id);
               setHasReplied(true);
-              await saveToStorage("reply", { replyId: latest.id, hasReplied: true });
+              await saveToStorage("reply", {
+                replyId: latest.id,
+                hasReplied: true,
+              });
 
               if (latest.reaction_text) {
                 setFinalReactionText(latest.reaction_text);
                 setReactionSent(true);
-                await saveToStorage("reaction", { reactionText: latest.reaction_text, reactionSent: true });
+                await saveToStorage("reaction", {
+                  reactionText: latest.reaction_text,
+                  reactionSent: true,
+                });
               }
 
-              // Check for sender's response
               if (latest.sender_response_text) {
                 setSenderResponseText(latest.sender_response_text);
-                await saveToStorage("senderResponse", { senderResponseText: latest.sender_response_text });
+                await saveToStorage("senderResponse", {
+                  senderResponseText: latest.sender_response_text,
+                });
               }
             }
           } catch (err) {
@@ -194,7 +216,6 @@ export default function MomentViewPage() {
           }
         }
 
-        // Load from storage
         const savedReply = await loadFromStorage("reply");
         if (savedReply) {
           setReplyId(savedReply.replyId);
@@ -217,6 +238,12 @@ export default function MomentViewPage() {
         if (savedSenderResponse) {
           setSenderResponseText(savedSenderResponse.senderResponseText);
         }
+
+        const savedGuess = await loadFromStorage("guess");
+        if (savedGuess) {
+          setGuessSubmitted(savedGuess.guessSubmitted);
+          setGuessText(savedGuess.guessText || "");
+        }
       } catch (err: any) {
         if (!cancel) setLoadError(err.message ?? "Failed to load moment");
       } finally {
@@ -230,48 +257,51 @@ export default function MomentViewPage() {
     };
   }, [shortCode]);
 
-  // Polling for real-time updates
+  // Poll for updates (clue, truth ready, sender response)
   useEffect(() => {
     const poll = async () => {
-      if (!shortCode || !hasReplied) return;
+      if (!shortCode) return;
 
       try {
-        const r = await fetch(`/api/rania/moments/by-code/${shortCode}/replies`, {
-          method: "GET",
-        });
+        const momentRes = await apiGetMoment(shortCode);
+        const m = momentRes.moment as any as MomentData;
+        setMoment((prev) => ({ ...(prev ?? m), ...m }));
+
+        const r = await fetch(
+          `/api/rania/moments/by-code/${shortCode}/replies`,
+          { method: "GET" },
+        );
         const json = await r.json();
 
-        if (json.success && Array.isArray(json.replies) && json.replies.length > 0) {
+        if (
+          json.success &&
+          Array.isArray(json.replies) &&
+          json.replies.length > 0
+        ) {
           const replies = json.replies as ReplyRow[];
           const latest = replies[replies.length - 1];
 
-          // Check for sender's response to receiver's reaction
-          if (latest.sender_response_text && latest.sender_response_text !== senderResponseText) {
+          if (
+            latest.sender_response_text &&
+            latest.sender_response_text !== senderResponseText
+          ) {
             setSenderResponseText(latest.sender_response_text);
-            await saveToStorage("senderResponse", { senderResponseText: latest.sender_response_text });
-            setToast("Sender replied! 💬");
+            await saveToStorage("senderResponse", {
+              senderResponseText: latest.sender_response_text,
+            });
+            setToast("They replied to your reaction 💬");
           }
-        }
-
-        // Check for new hidden truth from sender
-        const momentRes = await apiGetMoment(shortCode);
-        const m = momentRes.moment as MomentData;
-
-        if (m.hiddenPreview && !moment?.hiddenPreview) {
-          setMoment(m);
-          setToast("They sent a hidden truth! 🔒");
         }
       } catch (err) {
         console.warn("Polling error:", err);
       }
     };
 
-    pollIntervalRef.current = setInterval(poll, 3000);
-
+    pollIntervalRef.current = setInterval(poll, 4000);
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [shortCode, hasReplied, senderResponseText, moment?.hiddenPreview]);
+  }, [shortCode, senderResponseText]);
 
   async function handleReplySubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -291,9 +321,12 @@ export default function MomentViewPage() {
       });
       setReplyId(res.replyId);
       setHasReplied(true);
-      await saveToStorage("reply", { replyId: res.replyId, hasReplied: true });
+      await saveToStorage("reply", {
+        replyId: res.replyId,
+        hasReplied: true,
+      });
       setReplyText("");
-      setToast("Reply sent. Waiting for their hidden truth…");
+      setToast("Reply sent. Wait for their clue…");
     } catch (err: any) {
       setToast(err.message ?? "Failed to submit reply");
     } finally {
@@ -301,15 +334,58 @@ export default function MomentViewPage() {
     }
   }
 
+  async function handleGuessSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!moment) return;
+    if (!guessText.trim()) {
+      setToast("Guess cannot be empty.");
+      return;
+    }
+
+    setSubmittingGuess(true);
+    try {
+      const res = await fetch(
+        `/api/rania/moments/by-code/${shortCode}/guess`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-rania-guest-id":
+              typeof window !== "undefined"
+                ? localStorage.getItem("rania_guest_id") ?? ""
+                : "",
+          },
+          body: JSON.stringify({
+            guessText: guessText.trim(),
+            identity: {},
+          }),
+        },
+      );
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || "Failed to submit guess");
+      }
+
+      setGuessSubmitted(true);
+      await saveToStorage("guess", {
+        guessText: guessText.trim(),
+        guessSubmitted: true,
+      });
+      setToast("Guess sent. They’ll now decide what to reveal.");
+    } catch (err: any) {
+      setToast(err.message ?? "Error sending guess");
+    } finally {
+      setSubmittingGuess(false);
+    }
+  }
+
   async function handleReactionSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!moment) return;
-
     if (!replyId) {
       alert("We could not find your reply. Refresh and try again.");
       return;
     }
-
     if (!reactionText.trim()) {
       alert("Reaction cannot be empty.");
       return;
@@ -323,7 +399,9 @@ export default function MomentViewPage() {
         headers: {
           "Content-Type": "application/json",
           "x-rania-guest-id":
-            typeof window !== "undefined" ? localStorage.getItem("rania_guest_id") ?? "" : "",
+            typeof window !== "undefined"
+              ? localStorage.getItem("rania_guest_id") ?? ""
+              : "",
         },
         body: JSON.stringify({
           replyId,
@@ -336,7 +414,10 @@ export default function MomentViewPage() {
       if (!json.success) throw new Error(json.error || "Failed to send reaction");
 
       setFinalReactionText(reactionText.trim());
-      await saveToStorage("reaction", { reactionText: reactionText.trim(), reactionSent: true });
+      await saveToStorage("reaction", {
+        reactionText: reactionText.trim(),
+        reactionSent: true,
+      });
       setReactionText("");
       setReactionSent(true);
       setToast("Reaction sent!");
@@ -352,12 +433,12 @@ export default function MomentViewPage() {
     setDeepTruthError(null);
 
     if (!window.PaystackPop || !paystackKey) {
-      setDeepTruthError("Payment library not loaded or Paystack key missing.");
+      setDeepTruthError("Payment system not ready.");
       return;
     }
 
     if (!deepTruthEmail || !deepTruthEmail.includes("@")) {
-      setDeepTruthError("Enter a valid email for Paystack.");
+      setDeepTruthError("Enter a valid email.");
       return;
     }
 
@@ -399,9 +480,9 @@ export default function MomentViewPage() {
         skipPaymentCheck: true,
       });
       setDeepTruth(res.deepTruth);
-      setToast("Deep Truth unlocked.");
+      setToast("Deep Breakdown unlocked.");
     } catch (err: any) {
-      setDeepTruthError(err.message ?? "Failed to get Deep Truth");
+      setDeepTruthError(err.message ?? "Failed to get Deep Breakdown");
     } finally {
       setDeepTruthLoading(false);
     }
@@ -473,7 +554,10 @@ export default function MomentViewPage() {
 
       setHiddenFullText(json.hiddenFullText);
       setHasUnlockedHidden(true);
-      await saveToStorage("hidden", { hiddenFullText: json.hiddenFullText, hasUnlockedHidden: true });
+      await saveToStorage("hidden", {
+        hiddenFullText: json.hiddenFullText,
+        hasUnlockedHidden: true,
+      });
       setToast("Hidden truth unlocked.");
     } catch (err: any) {
       setToast(err.message ?? "Failed to unlock hidden truth");
@@ -521,7 +605,9 @@ export default function MomentViewPage() {
     return (
       <div className="glass rounded-xl sm:rounded-2xl p-6 sm:p-8 max-w-md mx-auto space-y-4 text-center">
         <div className="text-5xl">😕</div>
-        <p className="text-pink-600 font-medium">Could not load this RANIA moment.</p>
+        <p className="text-pink-600 font-medium">
+          Could not load this RANIA moment.
+        </p>
         <button
           onClick={() => router.push("/moments/create")}
           className="w-full py-2 sm:py-3 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition"
@@ -540,20 +626,37 @@ export default function MomentViewPage() {
 
   const hasHiddenPreview = !!moment.hiddenPreview;
   const hasFullHidden = !!hiddenFullText;
+  const hasClue = !!moment.clueText;
+  const hasGuess = !!moment.guessText || guessSubmitted;
+  const truthReady = moment.hasHidden; // server set when final truth exists
 
   const phaseReply = !hasReplied;
-  const phaseAwaitingHidden = hasReplied && !hasHiddenPreview && !hasFullHidden;
-  const phasePreviewOnly = hasReplied && hasHiddenPreview && !hasFullHidden;
-  const phaseFullHidden = hasReplied && hasFullHidden;
+  const phaseAwaitingClue = hasReplied && !hasClue;
+  const phaseGuess = hasReplied && hasClue && !hasGuess;
+  const phaseWaitingTruth =
+    hasReplied && hasClue && hasGuess && !truthReady;
+  const phasePreviewOnly =
+    hasReplied && truthReady && hasHiddenPreview && !hasFullHidden;
+  const phaseFullHidden =
+    hasReplied && truthReady && hasUnlockedHidden && hasFullHidden;
 
   const previewMasked =
-    hasHiddenPreview && moment.hiddenPreview ? maskPreview(moment.hiddenPreview) : "";
+    hasHiddenPreview && moment.hiddenPreview
+      ? maskPreview(moment.hiddenPreview)
+      : "";
+  const fullHiddenTextDisplay = hiddenFullText ?? "";
+  const finalReplyForCard =
+    finalReactionText || (reactionSent ? "[Reaction sent]" : "[Their reaction]");
 
-  const fullHiddenText = hiddenFullText ?? "";
+  const canUseDeepTruth =
+    phaseFullHidden && reactionSent && !!replyId && !!hiddenFullText;
 
   return (
     <>
-      <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
+      <Script
+        src="https://js.paystack.co/v1/inline.js"
+        strategy="afterInteractive"
+      />
 
       <div className="max-w-3xl mx-auto space-y-6 px-4 sm:px-0 py-6">
         <header className="rounded-3xl p-6 bg-gradient-to-br from-purple-700/10 via-pink-700/8 to-cyan-700/6 border border-purple-400/30 shadow-sm">
@@ -566,8 +669,8 @@ export default function MomentViewPage() {
                 {moment.teaserText}
               </h1>
               <p className="mt-2 text-sm text-slate-300">
-                Someone sent you this. Reply honestly — first reply. When they write a hidden truth,
-                you&apos;ll see a masked preview here.
+                Someone sent you this. Reply honestly. Then you&apos;ll get a clue,
+                guess their truth, and finally unlock what they really meant.
               </p>
             </div>
 
@@ -578,22 +681,34 @@ export default function MomentViewPage() {
               >
                 Create a moment
               </button>
-              <div className="text-xs text-slate-400">Share a real moment — be bold.</div>
+              <div className="text-xs text-slate-400">
+                Turn chats into RANIA threads.
+              </div>
             </div>
           </div>
         </header>
 
         <main className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <section className="space-y-5">
+            {/* PHASE 1: REPLY */}
             {phaseReply && (
               <div className="rounded-2xl p-5 bg-slate-900/80 border border-slate-800 shadow-md">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-100">💬 Reply (free)</h2>
-                  <div className="text-xs text-slate-400">First reply unlocks the preview flow</div>
+                  <h2 className="text-lg font-bold text-slate-100">
+                    💬 Reply (first step)
+                  </h2>
+                  <div className="text-xs text-slate-400">
+                    Your reply starts the game
+                  </div>
                 </div>
 
-                <form onSubmit={handleReplySubmit} className="mt-4 space-y-4">
-                  <label className="block text-xs text-slate-300 font-semibold">Your reply</label>
+                <form
+                  onSubmit={handleReplySubmit}
+                  className="mt-4 space-y-4"
+                >
+                  <label className="block text-xs text-slate-300 font-semibold">
+                    Your reply
+                  </label>
                   <textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
@@ -604,14 +719,18 @@ export default function MomentViewPage() {
 
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
-                      <label className="block text-xs text-slate-400">Vibe (1–10)</label>
+                      <label className="block text-xs text-slate-400">
+                        Vibe (1–10)
+                      </label>
                       <input
                         aria-label="Vibe"
                         type="range"
                         min={1}
                         max={10}
                         value={vibeScore ?? 5}
-                        onChange={(e) => setVibeScore(Number(e.target.value))}
+                        onChange={(e) =>
+                          setVibeScore(Number(e.target.value))
+                        }
                         className="w-full h-2 rounded-lg appearance-none cursor-pointer"
                       />
                     </div>
@@ -640,40 +759,108 @@ export default function MomentViewPage() {
                       Clear
                     </button>
                   </div>
-                  <p className="text-xs text-slate-400">Replies are private — RANIA will notify them on WhatsApp.</p>
+                  <p className="text-xs text-slate-400">
+                    Your reply is private. RANIA just forwards the link
+                    back to them.
+                  </p>
                 </form>
               </div>
             )}
 
-            {phaseAwaitingHidden && (
+            {/* PHASE 2: WAITING FOR CLUE */}
+            {phaseAwaitingClue && (
               <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800 text-sm text-slate-300">
-                ✅ Your reply has been saved. Waiting for them to write a hidden truth — you&apos;ll see a preview here
-                once they submit it.
+                ✅ Your reply has been saved. They&apos;re now writing a clue
+                about what they really want to say.
               </div>
             )}
 
+            {/* PHASE 3: CLUE + GUESS */}
+            {phaseGuess && moment.clueText && (
+              <div className="rounded-2xl p-5 bg-slate-900/80 border border-purple-400/30 shadow-md space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-slate-100">
+                    🕵️ Guess their truth
+                  </h2>
+                  <div className="text-xs text-slate-400">
+                    Read the clue, then guess.
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-slate-950/70 border border-slate-800 p-4">
+                  <p className="text-xs text-slate-400 font-semibold mb-2">
+                    Their clue
+                  </p>
+                  <p className="text-sm text-pink-50 whitespace-pre-wrap">
+                    {moment.clueText}
+                  </p>
+                </div>
+
+                <form onSubmit={handleGuessSubmit} className="space-y-3">
+                  <label className="block text-xs text-slate-300 font-semibold">
+                    Your guess (what do you think the truth is?)
+                  </label>
+                  <textarea
+                    value={guessText}
+                    onChange={(e) => setGuessText(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none resize-none"
+                    placeholder="Take your best guess…"
+                  />
+                  <button
+                    type="submit"
+                    disabled={submittingGuess || !guessText.trim()}
+                    className="w-full py-2 rounded-2xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
+                  >
+                    {submittingGuess ? "Sending guess…" : "Send guess"}
+                  </button>
+                  <p className="text-xs text-slate-400">
+                    They&apos;ll see your guess and decide how much to reveal.
+                  </p>
+                </form>
+              </div>
+            )}
+
+            {/* PHASE 4: GUESS SENT, WAITING FOR TRUTH */}
+            {phaseWaitingTruth && (
+              <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800 text-sm text-slate-300">
+                ✅ Your guess has been sent. They&apos;re now deciding how much
+                of the truth to reveal.
+              </div>
+            )}
+
+            {/* PHASE 5 & 6: PREVIEW / FULL HIDDEN */}
             {(phasePreviewOnly || phaseFullHidden) && (
               <div className="rounded-2xl p-4 bg-slate-900/80 border border-purple-400/20">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <div className="text-[11px] uppercase font-semibold text-pink-300">Hidden truth</div>
-                    <div className="text-xs text-slate-400">What they wrote for you</div>
+                    <div className="text-[11px] uppercase font-semibold text-pink-300">
+                      Hidden truth
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      What they really wanted to tell you
+                    </div>
                   </div>
                   <div className="text-xs text-slate-500">Private</div>
                 </div>
 
                 <div className="rounded-xl p-4 bg-slate-950 border border-slate-800 text-pink-50 min-h-[64px]">
                   {phaseFullHidden ? (
-                    <div className="whitespace-pre-wrap text-sm">{fullHiddenText}</div>
+                    <div className="whitespace-pre-wrap text-sm">
+                      {fullHiddenTextDisplay}
+                    </div>
                   ) : (
-                    <div className="whitespace-pre-wrap text-sm">{previewMasked}</div>
+                    <div className="whitespace-pre-wrap text-sm">
+                      {previewMasked}
+                    </div>
                   )}
                 </div>
 
                 {phasePreviewOnly && moment.isHiddenLocked && (
                   <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                     <div className="text-sm text-slate-300">
-                      This is a short preview. To read the full message, unlock it now.
+                      This is just a preview. To read the full message, unlock
+                      it now.
                     </div>
 
                     <button
@@ -681,18 +868,21 @@ export default function MomentViewPage() {
                       disabled={unlockingHidden || hasUnlockedHidden}
                       className="w-full py-2 rounded-2xl bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
                     >
-                      {hasUnlockedHidden ? "✓ Already unlocked" : unlockingHidden ? "Opening payment…" : `🔓 Unlock full truth — KES ${moment.hiddenUnlockPriceKes ?? HIDDEN_UNLOCK_PRICE_KES}`}
+                      {hasUnlockedHidden
+                        ? "✓ Already unlocked"
+                        : unlockingHidden
+                        ? "Opening payment…"
+                        : "🔓 Unlock full truth"}
                     </button>
                   </div>
                 )}
 
-                {phasePreviewOnly && !moment.isHiddenLocked && (
-                  <div className="mt-3 text-sm text-slate-300">Full truth is available — refresh to load it.</div>
-                )}
-
                 {phaseFullHidden && (
                   <>
-                    <form onSubmit={handleReactionSubmit} className="mt-4 space-y-3">
+                    <form
+                      onSubmit={handleReactionSubmit}
+                      className="mt-4 space-y-3"
+                    >
                       <label className="block text-sm font-semibold text-slate-200">
                         Reply to their truth
                       </label>
@@ -706,16 +896,16 @@ export default function MomentViewPage() {
                       <div className="flex gap-3">
                         <button
                           type="submit"
-                          disabled={submittingReaction || !reactionText.trim()}
+                          disabled={
+                            submittingReaction || !reactionText.trim()
+                          }
                           className="flex-1 py-2 rounded-2xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
                         >
                           {submittingReaction ? "Sending…" : "Send reaction"}
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setReactionText("");
-                          }}
+                          onClick={() => setReactionText("")}
                           className="px-4 py-2 rounded-2xl border border-slate-700 text-sm text-slate-300 hover:bg-slate-800 transition"
                         >
                           Clear
@@ -723,13 +913,16 @@ export default function MomentViewPage() {
                       </div>
                     </form>
 
-                    {/* SENDER'S RESPONSE SECTION */}
                     {senderResponseText && (
                       <div className="mt-4 border-t border-purple-400/20 pt-4 space-y-3">
                         <div className="space-y-2">
-                          <div className="text-[11px] uppercase font-semibold text-cyan-300">Their response to you</div>
+                          <div className="text-[11px] uppercase font-semibold text-cyan-300">
+                            Their response to your reaction
+                          </div>
                           <div className="rounded-lg bg-cyan-950/40 border border-cyan-400/30 p-3">
-                            <p className="text-sm text-cyan-50 leading-relaxed">{senderResponseText}</p>
+                            <p className="text-sm text-cyan-50 leading-relaxed">
+                              {senderResponseText}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -737,7 +930,9 @@ export default function MomentViewPage() {
 
                     <div className="mt-4 border-t border-purple-400/20 pt-3">
                       <div className="flex items-center justify-between">
-                        <div className="text-sm text-pink-100">Shareable card</div>
+                        <div className="text-sm text-pink-100">
+                          Conversation card
+                        </div>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setShowMomentCard((v) => !v)}
@@ -745,7 +940,6 @@ export default function MomentViewPage() {
                           >
                             {showMomentCard ? "Hide" : "Preview"}
                           </button>
-                        
                           <button
                             onClick={handleShareFullText}
                             className="text-xs px-3 py-1 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 transition"
@@ -759,8 +953,8 @@ export default function MomentViewPage() {
                         <div className="mt-3">
                           <MomentCardCanvas
                             teaser={moment.teaserText}
-                            hiddenText={fullHiddenText}
-                            replyText={reactionText || "[Their reaction]"}
+                            hiddenText={fullHiddenTextDisplay}
+                            replyText={finalReplyForCard}
                             shareUrl={`${baseUrl}/m/${moment.shortCode}`}
                           />
                         </div>
@@ -772,87 +966,105 @@ export default function MomentViewPage() {
             )}
           </section>
 
+          {/* RIGHT COLUMN: Deep Breakdown + tips */}
           <aside className="space-y-5">
-            <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-bold text-pink-100 flex items-center gap-2">
-                    <span>🔬</span> Deep Breakdown
+            {/* Deep Breakdown only after full truth unlocked + reaction */}
+            {canUseDeepTruth && (
+              <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-pink-100 flex items-center gap-2">
+                      <span>🔬</span> Deep Breakdown
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Optional deeper take on this moment
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-400">Optional deeper take on this moment</div>
                 </div>
-                <div className="text-xs text-slate-500">KES {DEEP_TRUTH_PRICE_KES}</div>
-              </div>
 
-              {deepTruth && (
-                <div className="mt-3 text-sm text-pink-50 whitespace-pre-wrap border border-pink-400/20 rounded-md p-3 bg-slate-950">
-                  {deepTruth}
-                </div>
-              )}
+                {deepTruth && (
+                  <div className="mt-3 text-sm text-pink-50 whitespace-pre-wrap border border-pink-400/20 rounded-md p-3 bg-slate-950">
+                    {deepTruth}
+                  </div>
+                )}
 
-              {!deepTruth && !deepTruthLoading && (
-                <div className="mt-3 space-y-2">
-                  <label className="block text-xs text-slate-400">Email for receipt</label>
-                  <input
-                    type="email"
-                    value={deepTruthEmail}
-                    onChange={(e) => setDeepTruthEmail}
-                    className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-200 focus:outline-none"
-                    placeholder="you@domain.com"
-                  />
-                  <button
-                    onClick={handleDeepTruth}
-                    disabled={payingDeepTruth}
-                    className="w-full py-2 rounded-2xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
-                  >
-                    {payingDeepTruth ? "Opening payment…" : `Unlock Deep Breakdown — KES ${DEEP_TRUTH_PRICE_KES}`}
-                  </button>
-                </div>
-              )}
-
-              {deepTruthLoading && (
-                <div className="mt-3 text-sm text-pink-100">Analyzing…</div>
-              )}
-
-              {deepTruthError && <div className="mt-3 text-sm text-red-400">{deepTruthError}</div>}
-
-              {deepTruth && (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-pink-100">Share deep truth</div>
+                {!deepTruth && !deepTruthLoading && (
+                  <div className="mt-3 space-y-2">
+                    <label className="block text-xs text-slate-400">
+                      Email for receipt
+                    </label>
+                    <input
+                      type="email"
+                      value={deepTruthEmail}
+                      onChange={(e) => setDeepTruthEmail(e.target.value)}
+                      className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-200 focus:outline-none"
+                      placeholder="you@domain.com"
+                    />
                     <button
-                      onClick={() => setShowDeepTruthCard((v) => !v)}
-                      className="text-xs px-3 py-1 rounded-full border border-pink-400/40 text-pink-200 hover:bg-pink-500/10 transition"
+                      onClick={handleDeepTruth}
+                      disabled={payingDeepTruth}
+                      className="w-full py-2 rounded-2xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold hover:scale-105 transition disabled:opacity-60"
                     >
-                      {showDeepTruthCard ? "Hide" : "Preview"}
+                      {payingDeepTruth
+                        ? "Processing…"
+                        : "Unlock Deep Breakdown"}
                     </button>
                   </div>
+                )}
 
-                  {showDeepTruthCard && (
-                    <div className="mt-3">
-                      <DeepTruthCardCanvas
-                        teaser={moment.teaserText}
-                        hiddenText={fullHiddenText}
-                        deepTruth={deepTruth}
-                        shareUrl={`${baseUrl}/m/${moment.shortCode}`}
-                      />
+                {deepTruthLoading && (
+                  <div className="mt-3 text-sm text-pink-100">
+                    Analyzing this moment…
+                  </div>
+                )}
+
+                {deepTruthError && (
+                  <div className="mt-3 text-sm text-red-400">
+                    {deepTruthError}
+                  </div>
+                )}
+
+                {deepTruth && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-pink-100">
+                        Share deep truth card
+                      </div>
+                      <button
+                        onClick={() => setShowDeepTruthCard((v) => !v)}
+                        className="text-xs px-3 py-1 rounded-full border border-pink-400/40 text-pink-200 hover:bg-pink-500/10 transition"
+                      >
+                        {showDeepTruthCard ? "Hide" : "Preview"}
+                      </button>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
 
-            {/* Tips / small help */}
+                    {showDeepTruthCard && (
+                      <div className="mt-3">
+                        <DeepTruthCardCanvas
+                          teaser={moment.teaserText}
+                          hiddenText={fullHiddenTextDisplay}
+                          deepTruth={deepTruth}
+                          shareUrl={`${baseUrl}/m/${moment.shortCode}`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tips */}
             <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800 text-sm text-slate-300">
-              <div className="font-semibold text-slate-100 mb-2">Tips</div>
+              <div className="font-semibold text-slate-100 mb-2">
+                Tips
+              </div>
               <ul className="list-disc pl-4 space-y-1">
-                <li>Reply first — it keeps the conversation honest.</li>
-                <li>Previews don&apos;t show the full message. Unlock to see everything.</li>
-                <li>Unlocked truths are private — share consciously.</li>
+                <li>Reply first — it unlocks everything else.</li>
+                <li>Take the clue seriously; your guess shapes what they send.</li>
+                <li>Hidden truths stay private unless you choose to share.</li>
               </ul>
             </div>
 
-            {/* small footer */}
             <div className="rounded-2xl p-3 bg-slate-900/60 border border-slate-800 text-xs text-slate-400">
               <div className="flex items-center justify-between">
                 <div>Need help? Reach the RANIA team</div>
@@ -867,11 +1079,12 @@ export default function MomentViewPage() {
           </aside>
         </main>
 
-        {/* share area when full hidden is available */}
         {phaseFullHidden && (
-          <div className="rounded-2xl p-4 bg-slate-900/80 border border-pink-400/20">
+          <div className="rounded-2xl p-4 bg-slate-900/80 border border-pink-400/20 mt-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-pink-100">Share this unlocked moment</div>
+              <div className="text-sm font-semibold text-pink-100">
+                Share this unlocked moment
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleShareFullText}
@@ -881,7 +1094,7 @@ export default function MomentViewPage() {
                 </button>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(`"${fullHiddenText}"`);
+                    navigator.clipboard.writeText(`"${fullHiddenTextDisplay}"`);
                     setToast("Hidden text copied");
                   }}
                   className="px-3 py-1 rounded-full border border-slate-700 text-xs text-slate-200 hover:bg-slate-800 transition"
@@ -893,7 +1106,6 @@ export default function MomentViewPage() {
           </div>
         )}
 
-        {/* small global CTA / back */}
         <div className="text-center pt-2 pb-6">
           <button
             onClick={() => router.push("/moments/create")}
@@ -903,7 +1115,6 @@ export default function MomentViewPage() {
           </button>
         </div>
 
-        {/* toast */}
         {toast && (
           <div className="fixed right-6 bottom-6 z-50">
             <div className="rounded-xl px-4 py-2 bg-slate-900/90 text-sm text-slate-100 border border-slate-800 shadow">

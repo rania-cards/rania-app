@@ -32,6 +32,7 @@ type ReplyRow = {
   id: string;
   reply_text: string;
   reaction_text: string | null;
+  sender_response_text?: string | null;
   created_at: string;
 };
 
@@ -42,6 +43,9 @@ type ManageMomentData = {
   hiddenPreview?: string;
   isHiddenLocked?: boolean;
   hiddenUnlockPriceKes?: number;
+  clueText?: string | null;
+  guessText?: string | null;
+  status?: string;
 };
 
 const POLISH_PRICE_KES = 20;
@@ -54,15 +58,15 @@ export default function ManageMomentPage() {
 
   const [moment, setMoment] = useState<ManageMomentData | null>(null);
   const [replies, setReplies] = useState<ReplyRow[]>([]);
-  const [fullHiddenText, setFullHiddenText] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Track if truth is submitted
+  // Clue + truth
+  const [clueText, setClueText] = useState("");
+  const [clueSubmitted, setClueSubmitted] = useState(false);
+
+  const [fullHiddenText, setFullHiddenText] = useState("");
   const [truthSubmitted, setTruthSubmitted] = useState(false);
 
-  // Reaction from receiver
+  // Reaction & response
   const [receiverReaction, setReceiverReaction] = useState<string | null>(null);
   const [senderResponse, setSenderResponse] = useState("");
   const [submittingResponse, setSubmittingResponse] = useState(false);
@@ -71,14 +75,14 @@ export default function ManageMomentPage() {
   const [isPolishing, setIsPolishing] = useState(false);
   const [polishError, setPolishError] = useState<string | null>(null);
   const [polishEmail, setPolishEmail] = useState("");
-
-  // Number of times we've polished this hidden truth for this moment
   const [polishAttempts, setPolishAttempts] = useState(0);
 
-  // Toast
+  // Toast / error / loading
   const [toast, setToast] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Polling
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const paystackKey =
@@ -90,7 +94,7 @@ export default function ManageMomentPage() {
       ? process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "KES"
       : "KES";
 
-  // Save to persistent storage
+  // Storage helpers
   const saveToStorage = async (key: string, data: any) => {
     try {
       await window.Storage?.set(
@@ -102,7 +106,6 @@ export default function ManageMomentPage() {
     }
   };
 
-  // Load from persistent storage
   const loadFromStorage = async (key: string) => {
     try {
       const result = await window.Storage?.get(`sender:${shortCode}:${key}`);
@@ -114,7 +117,7 @@ export default function ManageMomentPage() {
   };
 
   // Toast handler
-   useEffect(() => {
+  useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
@@ -132,20 +135,23 @@ export default function ManageMomentPage() {
         if (cancelled) return;
 
         const m = res.moment as any;
-        setMoment({
+        const mappedMoment: ManageMomentData = {
           id: m.id,
           shortCode: m.shortCode,
           teaserText: m.teaserText,
           hiddenPreview: m.hiddenPreview,
           isHiddenLocked: m.isHiddenLocked,
           hiddenUnlockPriceKes: m.hiddenUnlockPriceKes,
-        });
+          clueText: m.clueText ?? null,
+          guessText: m.guessText ?? null,
+          status: m.status,
+        };
+        setMoment(mappedMoment);
 
+        // Load replies
         const r = await fetch(
           `/api/rania/moments/by-code/${shortCode}/replies`,
-          {
-            method: "GET",
-          },
+          { method: "GET" },
         );
         const json = await r.json();
         if (!cancelled && json.success) {
@@ -168,6 +174,7 @@ export default function ManageMomentPage() {
           }
         }
 
+        // Load from storage
         const savedTruth = await loadFromStorage("truth");
         if (savedTruth) {
           setFullHiddenText(savedTruth.hiddenFullText);
@@ -183,6 +190,16 @@ export default function ManageMomentPage() {
         if (savedResponse) {
           setSenderResponse(savedResponse.responseText);
         }
+
+        const savedClue = await loadFromStorage("clue");
+        if (savedClue) {
+          setClueText(savedClue.clueText);
+          setClueSubmitted(savedClue.clueSubmitted);
+        } else if (mappedMoment.clueText) {
+          // if already in DB but not in storage
+          setClueText(mappedMoment.clueText);
+          setClueSubmitted(true);
+        }
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? "Failed to load moment");
       } finally {
@@ -195,106 +212,77 @@ export default function ManageMomentPage() {
       cancelled = true;
     };
   }, [shortCode]);
-  // Polling for real-time updates
+
+  // Polling for real-time updates (guess + reaction + response)
   useEffect(() => {
     const poll = async () => {
       if (!shortCode) return;
 
       try {
+        // Refresh replies
         const r = await fetch(
           `/api/rania/moments/by-code/${shortCode}/replies`,
-          {
-            method: "GET",
-          },
+          { method: "GET" },
         );
         const json = await r.json();
+        if (json.success && Array.isArray(json.replies)) {
+          const replies = json.replies as ReplyRow[];
+          setReplies(replies);
 
-        if (
-          json.success &&
-          Array.isArray(json.replies) &&
-          json.replies.length > 0
-        ) {
-          setReplies(json.replies as ReplyRow[]);
+          if (replies.length > 0) {
+            const latest = replies[replies.length - 1];
 
-          const latest = json.replies[json.replies.length - 1];
+            if (
+              latest.reaction_text &&
+              latest.reaction_text !== receiverReaction
+            ) {
+              setReceiverReaction(latest.reaction_text);
+              await saveToStorage("reaction", {
+                reactionText: latest.reaction_text,
+              });
+              setToast("Receiver reacted to your truth! 💬");
+            }
 
-          // Check for new receiver reaction
-          if (
-            latest.reaction_text &&
-            latest.reaction_text !== receiverReaction
-          ) {
-            setReceiverReaction(latest.reaction_text);
-            await saveToStorage("reaction", {
-              reactionText: latest.reaction_text,
-            });
-            setToast("Receiver reacted to your truth! 💬");
+            if (
+              latest.sender_response_text &&
+              latest.sender_response_text !== senderResponse
+            ) {
+              setSenderResponse(latest.sender_response_text);
+              await saveToStorage("response", {
+                responseText: latest.sender_response_text,
+              });
+            }
           }
         }
+
+        // Refresh moment (for clue/guess/truth status)
+        const res = await apiGetMoment(shortCode);
+        const m = res.moment as any;
+        setMoment((prev) => ({
+          ...(prev ?? {}),
+          id: m.id,
+          shortCode: m.shortCode,
+          teaserText: m.teaserText,
+          hiddenPreview: m.hiddenPreview,
+          isHiddenLocked: m.isHiddenLocked,
+          hiddenUnlockPriceKes: m.hiddenUnlockPriceKes,
+          clueText: m.clueText ?? null,
+          guessText: m.guessText ?? null,
+          status: m.status,
+        }));
       } catch (err) {
         console.warn("Polling error:", err);
       }
     };
 
-    pollIntervalRef.current = setInterval(poll, 3000);
-
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, [shortCode, receiverReaction]);
-
-    useEffect(() => {
-    const poll = async () => {
-      if (!shortCode) return;
-      try {
-        const r = await fetch(
-          `/api/rania/moments/by-code/${shortCode}/replies`,
-          {
-            method: "GET",
-          },
-        );
-        const json = await r.json();
-
-        if (
-          json.success &&
-          Array.isArray(json.replies) &&
-          json.replies.length > 0
-        ) {
-          setReplies(json.replies as ReplyRow[]);
-          const latest = json.replies[json.replies.length - 1];
-
-          if (
-            latest.reaction_text &&
-            latest.reaction_text !== receiverReaction
-          ) {
-            setReceiverReaction(latest.reaction_text);
-            await saveToStorage("reaction", {
-              reactionText: latest.reaction_text,
-            });
-            setToast("Receiver reacted to your truth! 💬");
-          }
-
-          if (
-            latest.sender_response_text &&
-            latest.sender_response_text !== senderResponse
-          ) {
-            setSenderResponse(latest.sender_response_text);
-            await saveToStorage("response", {
-              responseText: latest.sender_response_text,
-            });
-          }
-        }
-      } catch (err) {
-        console.warn("Polling error:", err);
-      }
-    };
-
-    pollIntervalRef.current = setInterval(poll, 3000);
+    pollIntervalRef.current = setInterval(poll, 3500);
 
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, [shortCode, receiverReaction, senderResponse]);
 
+  // Polish hidden truth
   async function callPolishAPI(text: string) {
     setIsPolishing(true);
     setPolishError(null);
@@ -315,6 +303,7 @@ export default function ManageMomentPage() {
       }
 
       setFullHiddenText(json.polished);
+      setPolishAttempts((c) => c + 1);
       setToast("Text polished!");
     } catch (err: any) {
       setPolishError(err.message ?? "Failed to polish with RANIA");
@@ -355,14 +344,14 @@ export default function ManageMomentPage() {
         void callPolishAPI(fullHiddenText.trim());
       },
       onClose: function () {
-        // closed
+        // user closed
       },
     });
 
     handler.openIframe();
   }
 
-  
+  // Save final hidden truth
   async function handleSaveHidden(e: React.FormEvent) {
     e.preventDefault();
     if (!moment) return;
@@ -400,6 +389,7 @@ export default function ManageMomentPage() {
               hiddenPreview: json.hiddenPreview as string,
               isHiddenLocked: true,
               hiddenUnlockPriceKes: json.priceKes as number,
+              status: "truth_ready",
             }
           : prev,
       );
@@ -409,6 +399,42 @@ export default function ManageMomentPage() {
       setError(err.message ?? "Failed to save hidden truth");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Save clue
+  async function handleSaveClue(e: React.FormEvent) {
+    e.preventDefault();
+    if (!moment) return;
+    const trimmed = clueText.trim();
+    if (!trimmed) {
+      setToast("Clue cannot be empty.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/rania/moments/${moment.id}/clue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clueText: trimmed }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to save clue");
+
+      setClueSubmitted(true);
+      setMoment((prev) =>
+        prev
+          ? {
+              ...prev,
+              clueText: trimmed,
+              status: "clue_sent",
+            }
+          : prev,
+      );
+      await saveToStorage("clue", { clueText: trimmed, clueSubmitted: true });
+      setToast("Clue sent! Now wait for their guess.");
+    } catch (err: any) {
+      setToast(err.message ?? "Error saving clue");
     }
   }
 
@@ -510,6 +536,11 @@ export default function ManageMomentPage() {
     );
   }
 
+  const hasReply = replies.length > 0;
+  const hasClue = !!moment.clueText || clueSubmitted;
+  const hasGuess = !!moment.guessText;
+  const hasTruth = truthSubmitted || !!moment.hiddenPreview;
+
   const remainingFreePolish = Math.max(
     0,
     MAX_FREE_POLISH_ATTEMPTS - polishAttempts,
@@ -517,9 +548,13 @@ export default function ManageMomentPage() {
 
   return (
     <>
-      <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
+      <Script
+        src="https://js.paystack.co/v1/inline.js"
+        strategy="afterInteractive"
+      />
 
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+        {/* Glow background */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
           <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
           <div
@@ -529,6 +564,7 @@ export default function ManageMomentPage() {
         </div>
 
         <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-6 sm:space-y-8">
+          {/* Header */}
           <div className="mb-8 sm:mb-12">
             <div className="space-y-3">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight">
@@ -539,12 +575,15 @@ export default function ManageMomentPage() {
                 </span>
               </h1>
               <p className="text-base sm:text-lg text-slate-300 max-w-2xl">
-                They replied. Now share your real truth and respond to how they reacted.
+                They replied. Now send a clue, see their guess, reveal your
+                full truth, and close the loop with a final response.
               </p>
             </div>
           </div>
 
+          {/* Content grid */}
           <div className="grid gap-8 lg:gap-12 lg:grid-cols-[1.1fr,0.9fr] items-start">
+            {/* LEFT COLUMN */}
             <div className="space-y-6">
               {/* Teaser Card */}
               <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-4 bg-gradient-to-br from-blue-600/20 to-cyan-600/20 border border-cyan-400/30 backdrop-blur-sm">
@@ -582,146 +621,233 @@ export default function ManageMomentPage() {
                 </div>
               )}
 
-              {/* CONDITIONAL: Show truth form OR response form */}
-              {!truthSubmitted ? (
-                // FORM 1: Submit Hidden Truth
-                <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-6 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 backdrop-blur-sm">
-                  <div>
-                    <h2 className="font-bold text-lg sm:text-xl text-slate-100 flex items-center gap-2 mb-2">
-                      <span>🔒</span> Your Full Truth
-                    </h2>
-                    <p className="text-sm text-slate-400">
-                      Write what you really meant. They see a preview and can unlock for KES 20, then read this full message.
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <label className="text-sm font-bold text-slate-100">
-                        What&apos;s the real truth?
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handlePolish}
-                        disabled={isPolishing || !fullHiddenText.trim()}
-                        className="text-xs px-3 py-1 rounded-full bg-pink-500/20 border border-pink-400/50 text-pink-200 hover:bg-pink-500/30 transition disabled:opacity-50"
-                      >
-                        {isPolishing
-                          ? "✨ Polishing…"
-                          : polishAttempts < MAX_FREE_POLISH_ATTEMPTS
-                          ? `✨ Polish (free ${MAX_FREE_POLISH_ATTEMPTS - polishAttempts} left)`
-                          : `✨ Polish · KES ${POLISH_PRICE_KES}`}
-                      </button>
-                    </div>
-                    <textarea
-                      value={fullHiddenText}
-                      onChange={(e) => setFullHiddenText(e.target.value)}
-                      rows={6}
-                      className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition resize-none"
-                      placeholder="Say what you really mean. The version only they deserve to see."
-                    />
-                  </div>
-
-                  <p className="text-[11px] text-slate-400">
-                    {polishAttempts < MAX_FREE_POLISH_ATTEMPTS
-                      ? `You have ${MAX_FREE_POLISH_ATTEMPTS - polishAttempts} free polish attempt(s) left. After that, polish costs KES ${POLISH_PRICE_KES} each time.`
-                      : `All free polish attempts used. Polishing now costs KES ${POLISH_PRICE_KES} each time.`}
-                  </p>
-
-                  {fullHiddenText.trim() && (
-                    <div className="space-y-2 rounded-lg bg-slate-950/40 border border-slate-800/60 p-4">
-                      <label className="text-xs font-bold text-slate-100 block">
-                        Email for polish receipt (if using paid polish)
-                      </label>
-                      <input
-                        type="email"
-                        placeholder="you@example.com"
-                        value={polishEmail}
-                        onChange={(e) => setPolishEmail(e.target.value)}
-                        className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition"
-                      />
-                      <p className="text-xs text-slate-500">
-                        Required only if you use the paid &quot;Polish with RANIA&quot; after free attempts.
+              {/* STAGES: CLUE -> GUESS -> TRUTH -> RESPONSE */}
+              {hasReply ? (
+                <>
+                  {/* Stage 1: Write clue (if none yet) */}
+                  {!hasClue && (
+                    <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-4 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 backdrop-blur-sm">
+                      <h2 className="font-bold text-lg sm:text-xl text-slate-100 flex items-center gap-2">
+                        <span>🕵️</span> Drop a clue
+                      </h2>
+                      <p className="text-sm text-slate-300">
+                        Give them a clue about your real truth. It should hint at
+                        the emotion, not spoil the whole message.
                       </p>
-                    </div>
-                  )}
-
-                  {(polishError || error) && (
-                    <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-200">
-                      ⚠️ {polishError || error}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={handleSaveHidden}
-                    disabled={saving || !fullHiddenText.trim()}
-                    className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all duration-300 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {saving ? "💾 Saving…" : "✨ Save Hidden Truth"}
-                  </button>
-
-                  <p className="text-center text-xs text-slate-400">
-                    Tip: Write raw first, then polish. Make their unlock feel worth it.
-                  </p>
-                </div>
-              ) : (
-                // FORM 2: Respond to Receiver's Reaction
-                <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-6 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 backdrop-blur-sm">
-                  <div>
-                    <h2 className="font-bold text-lg sm:text-xl text-slate-100 flex items-center gap-2 mb-2">
-                      <span>💬</span> Receiver&apos;s Reaction
-                    </h2>
-                    <p className="text-sm text-slate-400">
-                      They reacted to your truth. Reply to their reaction here.
-                    </p>
-                  </div>
-
-                  {receiverReaction && (
-                    <div className="rounded-lg bg-slate-950/60 border border-pink-400/30 p-4">
-                      <div className="text-xs text-slate-400 font-semibold mb-2">
-                        THEIR REACTION:
-                      </div>
-                      <p className="text-sm text-pink-50 leading-relaxed">
-                        {receiverReaction}
-                      </p>
-                    </div>
-                  )}
-
-                  {!receiverReaction && (
-                    <div className="rounded-lg bg-slate-900/60 border border-slate-800 p-4 text-sm text-slate-300">
-                      ⏳ Waiting for their reaction to your truth…
-                    </div>
-                  )}
-
-                  {receiverReaction && (
-                    <form onSubmit={handleSenderResponse} className="space-y-4">
-                      <div>
-                        <label className="text-sm font-bold text-slate-100 block mb-2">
-                          Your response
+                      <form onSubmit={handleSaveClue} className="space-y-3">
+                        <label className="block text-xs font-semibold text-slate-200">
+                          Clue
                         </label>
                         <textarea
-                          value={senderResponse}
-                          onChange={(e) => setSenderResponse(e.target.value)}
-                          rows={5}
-                          className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition resize-none"
-                          placeholder="Reply to how they reacted. Keep it real…"
+                          value={clueText}
+                          onChange={(e) => setClueText(e.target.value)}
+                          rows={4}
+                          className="w-full rounded-xl bg-slate-950/70 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none resize-none"
+                          placeholder="Example: It’s about something I’ve felt for a long time but never said aloud…"
                         />
+                        <button
+                          type="submit"
+                          className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-sm hover:scale-105 transition disabled:opacity-60"
+                        >
+                          Send clue
+                        </button>
+                        <p className="text-xs text-slate-400">
+                          Once you send a clue, they&apos;ll see it and get a
+                          chance to guess your real truth.
+                        </p>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Stage 2: Waiting for guess */}
+                  {hasClue && !moment.guessText && !hasTruth && (
+                    <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-3 bg-gradient-to-br from-purple-600/10 to-pink-600/10 border border-purple-400/30 backdrop-blur-sm">
+                      <h2 className="font-bold text-lg sm:text-xl text-slate-100 flex items-center gap-2">
+                        <span>⏳</span> Waiting for their guess
+                      </h2>
+                      <p className="text-sm text-slate-300">
+                        Your clue has been sent. When they guess, you&apos;ll
+                        see it here and can decide how much truth to reveal.
+                      </p>
+                      {moment.clueText && (
+                        <div className="rounded-lg bg-slate-950/60 border border-slate-800/60 p-4">
+                          <p className="text-xs text-slate-400 font-semibold mb-1">
+                            Clue you sent
+                          </p>
+                          <p className="text-sm text-slate-100">
+                            {moment.clueText}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Stage 3: Guess arrived, write full truth */}
+                  {hasClue &&
+                    moment.guessText &&
+                    !truthSubmitted && (
+                      <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-6 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 backdrop-blur-sm">
+                        <div>
+                          <h2 className="font-bold text-lg sm:text-xl text-slate-100 flex items-center gap-2 mb-2">
+                            <span>🎯</span> Their guess & your full truth
+                          </h2>
+                          <p className="text-sm text-slate-400 mb-3">
+                            They guessed. Now reveal what you actually feel. This
+                            is the truth they&apos;ll eventually unlock.
+                          </p>
+
+                          <div className="rounded-lg bg-slate-950/60 border border-slate-800/60 p-4 mb-4">
+                            <p className="text-xs text-slate-400 font-semibold mb-1">
+                              Their guess
+                            </p>
+                            <p className="text-sm text-slate-100">
+                              {moment.guessText}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <label className="text-sm font-bold text-slate-100">
+                              Your full truth
+                            </label>
+                            <button
+                              type="button"
+                              onClick={handlePolish}
+                              disabled={isPolishing || !fullHiddenText.trim()}
+                              className="text-xs px-3 py-1 rounded-full bg-pink-500/20 border border-pink-400/50 text-pink-200 hover:bg-pink-500/30 transition disabled:opacity-50"
+                            >
+                              {isPolishing
+                                ? "✨ Polishing…"
+                                : remainingFreePolish > 0
+                                ? `✨ Polish (${remainingFreePolish} left)`
+                                : `✨ Polish · KES ${POLISH_PRICE_KES}`}
+                            </button>
+                          </div>
+                          <textarea
+                            value={fullHiddenText}
+                            onChange={(e) => setFullHiddenText(e.target.value)}
+                            rows={6}
+                            className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition resize-none"
+                            placeholder="Write the full version of your truth. This is what they pay to fully unlock."
+                          />
+                        </div>
+
+                        {fullHiddenText.trim() && (
+                          <div className="space-y-2 rounded-lg bg-slate-950/40 border border-slate-800/60 p-4">
+                            <label className="text-xs font-bold text-slate-100 block">
+                              Email for polish receipt (if using paid polish)
+                            </label>
+                            <input
+                              type="email"
+                              placeholder="you@example.com"
+                              value={polishEmail}
+                              onChange={(e) => setPolishEmail(e.target.value)}
+                              className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition"
+                            />
+                            <p className="text-xs text-slate-500">
+                              Required only if you use the paid &quot;Polish
+                              with RANIA&quot; after your free attempts.
+                            </p>
+                          </div>
+                        )}
+
+                        {(polishError || error) && (
+                          <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-200">
+                            ⚠️ {polishError || error}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleSaveHidden}
+                          disabled={saving || !fullHiddenText.trim()}
+                          className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all duration-300 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {saving ? "💾 Saving…" : "✨ Save Hidden Truth"}
+                        </button>
+
+                        <p className="text-center text-xs text-slate-400">
+                          Tip: Don&apos;t dodge. Honest truths are what make
+                          RANIA powerful.
+                        </p>
+                      </div>
+                    )}
+
+                  {/* Stage 4: Reaction + your response (truthSubmitted) */}
+                  {hasTruth && (
+                    <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-6 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 backdrop-blur-sm">
+                      <div>
+                        <h2 className="font-bold text-lg sm:text-xl text-slate-100 flex items-center gap-2 mb-2">
+                          <span>💬</span> Receiver&apos;s Reaction
+                        </h2>
+                        <p className="text-sm text-slate-400">
+                          They reacted to your truth. Reply to their reaction
+                          here.
+                        </p>
                       </div>
 
-                      <button
-                        type="submit"
-                        disabled={submittingResponse || !senderResponse.trim()}
-                        className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all duration-300 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        {submittingResponse ? "Sending…" : "Send Response"}
-                      </button>
-                    </form>
+                      {receiverReaction && (
+                        <div className="rounded-lg bg-slate-950/60 border border-pink-400/30 p-4">
+                          <div className="text-xs text-slate-400 font-semibold mb-2">
+                            THEIR REACTION:
+                          </div>
+                          <p className="text-sm text-pink-50 leading-relaxed">
+                            {receiverReaction}
+                          </p>
+                        </div>
+                      )}
+
+                      {!receiverReaction && (
+                        <div className="rounded-lg bg-slate-900/60 border border-slate-800 p-4 text-sm text-slate-300">
+                          ⏳ Waiting for their reaction to your truth…
+                        </div>
+                      )}
+
+                      {receiverReaction && (
+                        <form
+                          onSubmit={handleSenderResponse}
+                          className="space-y-4"
+                        >
+                          <div>
+                            <label className="text-sm font-bold text-slate-100 block mb-2">
+                              Your response
+                            </label>
+                            <textarea
+                              value={senderResponse}
+                              onChange={(e) =>
+                                setSenderResponse(e.target.value)
+                              }
+                              rows={5}
+                              className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-purple-400 focus:outline-none transition resize-none"
+                              placeholder="Reply to how they reacted. Keep it real…"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={
+                              submittingResponse || !senderResponse.trim()
+                            }
+                            className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold text-base shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60 transition-all duration-300 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            {submittingResponse
+                              ? "Sending…"
+                              : "Send Response"}
+                          </button>
+                        </form>
+                      )}
+                    </div>
                   )}
+                </>
+              ) : (
+                <div className="rounded-2xl p-4 bg-slate-900/80 border border-slate-800 text-sm text-slate-300">
+                  Share your teaser link first. Once they reply, this space will
+                  unlock clue and truth tools.
                 </div>
               )}
             </div>
 
-            {/* Right Column */}
+            {/* RIGHT COLUMN (Status + preview) */}
             <div className="space-y-6">
               {/* Status Card */}
               <div className="rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-4 bg-gradient-to-br from-slate-800/30 to-slate-900/30 border border-slate-700/60 backdrop-blur-sm">
@@ -750,22 +876,34 @@ export default function ManageMomentPage() {
                         <span>You created the moment</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-green-500/30 border border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-300">
-                          {replies.length > 0 ? "✓" : "○"}
+                        <div className="w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold bg-green-500/30 border-green-500/50 text-green-300">
+                          {hasReply ? "✓" : "○"}
                         </div>
                         <span>They replied ({replies.length})</span>
                       </div>
                       <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold bg-green-500/30 border-green-500/50 text-green-300">
+                          {hasClue ? "✓" : "○"}
+                        </div>
+                        <span>You sent a clue</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold bg-green-500/30 border-green-500/50 text-green-300">
+                          {hasGuess ? "✓" : "○"}
+                        </div>
+                        <span>They guessed</span>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <div
                           className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${
-                            truthSubmitted
+                            hasTruth
                               ? "bg-green-500/30 border-green-500/50 text-green-300"
                               : "bg-yellow-500/30 border-yellow-500/50 text-yellow-300"
                           }`}
                         >
-                          {truthSubmitted ? "✓" : "⟳"}
+                          {hasTruth ? "✓" : "⟳"}
                         </div>
-                        <span>You reveal the truth</span>
+                        <span>You revealed the truth</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <div
@@ -777,7 +915,7 @@ export default function ManageMomentPage() {
                         >
                           {receiverReaction ? "✓" : "○"}
                         </div>
-                        <span>They react</span>
+                        <span>They reacted</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <div
@@ -789,7 +927,7 @@ export default function ManageMomentPage() {
                         >
                           {senderResponse.trim() ? "✓" : "○"}
                         </div>
-                        <span>You respond</span>
+                        <span>You responded</span>
                       </div>
                     </div>
                   </div>
@@ -807,6 +945,16 @@ export default function ManageMomentPage() {
                       {moment.hiddenPreview}
                     </p>
                   </div>
+                  {moment.guessText && (
+                    <div className="rounded-lg bg-slate-950/60 border border-slate-800/60 p-4 mt-2">
+                      <p className="text-xs text-slate-400 font-semibold mb-1">
+                        Their guess
+                      </p>
+                      <p className="text-sm text-slate-100">
+                        {moment.guessText}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -816,10 +964,10 @@ export default function ManageMomentPage() {
                   <span>💡</span> Pro Tips
                 </h3>
                 <ul className="text-xs text-slate-300 space-y-2">
-                  <li>• Write your raw truth first.</li>
-                  <li>• Use free polish attempts wisely before paying.</li>
-                  <li>• Your words should feel worth unlocking for them.</li>
-                  <li>• Respond to their reaction to close the emotional loop.</li>
+                  <li>• Use clues that hint at the emotion, not the full story.</li>
+                  <li>• Let their guess guide how vulnerable you want to be.</li>
+                  <li>• Polish your truth to make it feel cinematic and screenshot-ready.</li>
+                  <li>• Respond to their reaction — that’s where the real connection happens.</li>
                 </ul>
               </div>
             </div>

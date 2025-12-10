@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import { runDeepTruth } from "@/lib/rania/service";
+
 import { DeepTruthPayload } from "@/lib/rania/types";
+import { runDeepTruth } from "@/lib/rania/service";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -47,6 +48,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       },
       paymentReference: body.paymentReference,
       skipPaymentCheck: body.skipPaymentCheck,
+      mId: function (mId: any): unknown {
+        throw new Error("Function not implemented.");
+      }
     };
 
     const result = await runDeepTruth(payload);

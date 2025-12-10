@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import { runTruthLevel2 } from "@/lib/rania/service";
+
 import { TruthLevel2Payload } from "@/lib/rania/types";
+import { runTruthLevel2 } from "@/lib/rania/service";
 
 interface Params {
   params: Promise<{ id: string }>;

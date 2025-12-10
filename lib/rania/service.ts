@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // lib/rania/service.ts
 
-import { supabaseAdmin } from "../supabaseServer"
-
+import { supabaseAdmin } from "../supabaseServer";
 import {
   CreateMomentPayload,
   ReplyPayload,
@@ -18,7 +17,6 @@ import {
 } from "./payments";
 import { generateDeepTruthForMoment } from "./deepTruth";
 import { notifySender } from "./whatsapp";
-
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -36,13 +34,11 @@ function buildHiddenPreview(fullText: string, maxChars = 140): string {
   const normalized = fullText.trim();
   if (!normalized) return "";
 
-  // Try to cut at first sentence-ending punctuation.
   const sentenceEndMatch = normalized.match(/(.+?[.!?])( |$)/);
   if (sentenceEndMatch && sentenceEndMatch[1].length <= maxChars) {
     return sentenceEndMatch[1];
   }
 
-  // Fallback: cut at maxChars and add ellipsis
   if (normalized.length <= maxChars) return normalized;
   return normalized.slice(0, maxChars) + "…";
 }
@@ -69,7 +65,6 @@ export async function ensureIdentity(input: {
 }): Promise<Identity> {
   const { guestId, authUserId } = input;
 
-  // Case 1: neither provided – anonymous
   if (!guestId && !authUserId) {
     const { data, error } = await supabaseAdmin
       .from("rania_identities")
@@ -80,7 +75,6 @@ export async function ensureIdentity(input: {
     return { id: data.id };
   }
 
-  // Case 2: try to find existing identity
   const orFilters = [
     guestId ? `guest_id.eq.${guestId}` : "",
     authUserId ? `auth_user_id.eq.${authUserId}` : "",
@@ -96,11 +90,8 @@ export async function ensureIdentity(input: {
     .maybeSingle();
 
   if (error) throw error;
-  if (data) {
-    return { id: data.id };
-  }
+  if (data) return { id: data.id };
 
-  // Case 3: create new identity with whatever data we have
   const { data: created, error: createError } = await supabaseAdmin
     .from("rania_identities")
     .insert({
@@ -115,13 +106,12 @@ export async function ensureIdentity(input: {
 }
 
 // -----------------------------------------------------------------------------
-// 1) Create Moment (sender is free; teaser only)
+// 1) Create Moment
 // -----------------------------------------------------------------------------
 
 export async function createMoment(payload: CreateMomentPayload) {
   const identity = await ensureIdentity(payload.identity);
 
-  // Resolve mode_id
   const { data: modeRow, error: modeError } = await supabaseAdmin
     .from("rania_modes")
     .select("id, mode_key")
@@ -131,7 +121,6 @@ export async function createMoment(payload: CreateMomentPayload) {
   if (modeError) throw modeError;
   if (!modeRow) throw new Error("Unknown mode");
 
-  // Optional: premium reveal (not used for hidden unlock KES 20, but kept for compatibility)
   let premiumOptionId: string | null = null;
 
   if (payload.premiumReveal) {
@@ -145,7 +134,6 @@ export async function createMoment(payload: CreateMomentPayload) {
     premiumOptionId = pricingOption.id;
   }
 
-  // Generate unique short code
   let shortCode: string;
   for (;;) {
     shortCode = generateShortCode(6);
@@ -155,10 +143,9 @@ export async function createMoment(payload: CreateMomentPayload) {
       .eq("short_code", shortCode)
       .maybeSingle();
     if (error) throw error;
-    if (!data) break; // free code
+    if (!data) break;
   }
 
-  // Insert moment
   const { data: inserted, error: insertError } = await supabaseAdmin
     .from("rania_moments")
     .insert({
@@ -166,14 +153,16 @@ export async function createMoment(payload: CreateMomentPayload) {
       mode_id: modeRow.id,
       sender_identity_id: identity.id,
       delivery_format: payload.deliveryFormat,
-      teaser_snippet_id: null, // we are using custom text for now
+      teaser_snippet_id: null,
       hidden_snippet_id: null,
       custom_teaser_text: payload.customTeaserText ?? null,
-      custom_hidden_text: payload.customHiddenText ?? null, // legacy, not used by new flow
+      custom_hidden_text: payload.customHiddenText ?? null, // legacy
       hidden_full_text: null,
       hidden_preview_text: null,
       is_hidden_locked: false,
       hidden_unlock_price_kes: null,
+      clue_text: null,
+      guess_text: null,
       is_premium_reveal: payload.premiumReveal,
       premium_reveal_option_id: premiumOptionId,
       status: "sent",
@@ -186,7 +175,6 @@ export async function createMoment(payload: CreateMomentPayload) {
 
   if (insertError) throw insertError;
 
-  // Event log
   await supabaseAdmin.from("rania_events").insert({
     identity_id: identity.id,
     moment_id: inserted.id,
@@ -201,15 +189,13 @@ export async function createMoment(payload: CreateMomentPayload) {
 }
 
 // -----------------------------------------------------------------------------
-// 2) Sender adds hidden message after reply (locks at KES 20)
+// 2) Sender adds hidden message (final truth)
 // -----------------------------------------------------------------------------
 
 export async function addHiddenMessage(payload: AddHiddenMessagePayload) {
   const { momentId, fullHiddenText, unlockPriceKes } = payload;
   const trimmed = fullHiddenText.trim();
-  if (!trimmed) {
-    throw new Error("Hidden message cannot be empty");
-  }
+  if (!trimmed) throw new Error("Hidden message cannot be empty");
 
   const preview = buildHiddenPreview(trimmed);
 
@@ -220,9 +206,12 @@ export async function addHiddenMessage(payload: AddHiddenMessagePayload) {
       hidden_preview_text: preview,
       is_hidden_locked: true,
       hidden_unlock_price_kes: unlockPriceKes ?? 20,
+      status: "truth_ready",
     })
     .eq("id", momentId)
-    .select("id, short_code, hidden_preview_text, hidden_unlock_price_kes")
+    .select(
+      "id, short_code, hidden_preview_text, hidden_unlock_price_kes, clue_text, guess_text",
+    )
     .maybeSingle();
 
   if (error) throw error;
@@ -237,7 +226,89 @@ export async function addHiddenMessage(payload: AddHiddenMessagePayload) {
 }
 
 // -----------------------------------------------------------------------------
-// 3) Get Moment For Receiver (by shortCode)
+// 3) NEW: Sender sets clue for a moment (after receiver reply)
+// -----------------------------------------------------------------------------
+
+export async function setClueForMoment(momentId: string, clueText: string) {
+  const trimmed = clueText.trim();
+  if (!trimmed) throw new Error("Clue cannot be empty");
+
+  const { data, error } = await supabaseAdmin
+    .from("rania_moments")
+    .update({
+      clue_text: trimmed,
+      status: "clue_sent",
+    })
+    .eq("id", momentId)
+    .select("id, short_code, clue_text")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("Moment not found");
+
+  return {
+    id: data.id as string,
+    shortCode: data.short_code as string,
+    clueText: data.clue_text as string,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// 4) NEW: Receiver submits guess for a moment
+// -----------------------------------------------------------------------------
+
+export async function submitGuessForMoment(
+  shortCode: string,
+  guessText: string,
+  identityInput: { guestId?: string; authUserId?: string | null },
+) {
+  const identity = await ensureIdentity(identityInput);
+  const trimmed = guessText.trim();
+  if (!trimmed) throw new Error("Guess cannot be empty");
+
+  const { data: moment, error: momentError } = await supabaseAdmin
+    .from("rania_moments")
+    .select("id, short_code, clue_text, guess_text")
+    .eq("short_code", shortCode)
+    .maybeSingle();
+
+  if (momentError) throw momentError;
+  if (!moment) throw new Error("Moment not found");
+  if (!(moment as any).clue_text) {
+    throw new Error("Clue not set yet for this moment");
+  }
+
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from("rania_moments")
+    .update({
+      guess_text: trimmed,
+      status: "guess_submitted",
+    })
+    .eq("id", moment.id)
+    .select("id, short_code, guess_text")
+    .maybeSingle();
+
+  if (updateError) throw updateError;
+  if (!updated) throw new Error("Failed to save guess");
+
+  await supabaseAdmin.from("rania_events").insert({
+    identity_id: identity.id,
+    moment_id: moment.id,
+    event_type: "guess_submitted",
+    properties: {
+      short_code: moment.short_code,
+    },
+  });
+
+  return {
+    id: updated.id as string,
+    shortCode: updated.short_code as string,
+    guessText: updated.guess_text as string,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// 5) Get Moment For Receiver
 // -----------------------------------------------------------------------------
 
 export async function getMomentForReceiver(shortCode: string) {
@@ -257,7 +328,9 @@ export async function getMomentForReceiver(shortCode: string) {
       custom_hidden_text,
       hidden_preview_text,
       is_hidden_locked,
-      hidden_unlock_price_kes
+      hidden_unlock_price_kes,
+      clue_text,
+      guess_text
     `,
     )
     .eq("short_code", code)
@@ -279,6 +352,9 @@ export async function getMomentForReceiver(shortCode: string) {
       ? (moment as any).hidden_unlock_price_kes
       : 20;
 
+  const clueText = (moment as any).clue_text ?? null;
+  const guessText = (moment as any).guess_text ?? null;
+
   return {
     id: moment.id as string,
     shortCode: moment.short_code as string,
@@ -290,11 +366,13 @@ export async function getMomentForReceiver(shortCode: string) {
     hiddenPreview: hiddenPreview || legacyHidden || "",
     isHiddenLocked,
     hiddenUnlockPriceKes: priceKes as number,
+    clueText: clueText as string | null,
+    guessText: guessText as string | null,
   };
 }
 
 // -----------------------------------------------------------------------------
-// 4) First Reply (receiver free) – triggers WhatsApp to sender
+// 6) First Reply – same as before
 // -----------------------------------------------------------------------------
 
 export async function createReply(payload: ReplyPayload) {
@@ -309,7 +387,7 @@ export async function createReply(payload: ReplyPayload) {
       custom_hidden_text,
       sender_phone,
       sender_name
-    `
+    `,
     )
     .eq("short_code", payload.shortCode)
     .maybeSingle();
@@ -317,7 +395,6 @@ export async function createReply(payload: ReplyPayload) {
   if (momentError) throw momentError;
   if (!moment) throw new Error("Moment not found");
 
-  // Insert reply
   const { data: reply, error: replyError } = await supabaseAdmin
     .from("rania_replies")
     .insert({
@@ -339,13 +416,11 @@ export async function createReply(payload: ReplyPayload) {
     properties: { type: "unlock" },
   });
 
-  // Mark moment as awaiting hidden truth / reaction
   await supabaseAdmin
     .from("rania_moments")
-    .update({ status: "awaiting_reply" })
+    .update({ status: "awaiting_clue" })
     .eq("id", moment.id);
 
-  // Notify sender (non-fatal)
   if ((moment as any).sender_phone) {
     await notifySender({
       phone: (moment as any).sender_phone,
@@ -355,7 +430,6 @@ export async function createReply(payload: ReplyPayload) {
     });
   }
 
-  // UI shouldn't use this; hidden truth is added later via addHiddenMessage.
   const hiddenText: string = (moment as any).custom_hidden_text ?? "";
 
   return {
@@ -363,6 +437,9 @@ export async function createReply(payload: ReplyPayload) {
     hiddenText,
   };
 }
+
+// -----------------------------------------------------------------------------
+// 7) Unlock hidden (unchanged)
 // -----------------------------------------------------------------------------
 
 export async function unlockHiddenForIdentity(
@@ -370,7 +447,6 @@ export async function unlockHiddenForIdentity(
 ) {
   const identity = await ensureIdentity(payload.identity);
 
-  // 1) Check moment and lock status
   const { data: moment, error: momentError } = await supabaseAdmin
     .from("rania_moments")
     .select(
@@ -389,13 +465,11 @@ export async function unlockHiddenForIdentity(
   if (!moment) throw new Error("Moment not found");
 
   if (!(moment as any).is_hidden_locked) {
-    // Already unlocked (or never locked) – just return full text
     return {
       hiddenFullText: (moment as any).hidden_full_text ?? "",
     };
   }
 
-  // 2) See if identity already unlocked it
   const { data: existingUnlock, error: unlockError } = await supabaseAdmin
     .from("rania_hidden_unlocks")
     .select("id")
@@ -406,7 +480,6 @@ export async function unlockHiddenForIdentity(
   if (unlockError) throw unlockError;
 
   if (!existingUnlock) {
-    // 3) Charge or record payment via pricing option HIDDEN_UNLOCK
     await chargeOrUsePass({
       identityId: identity.id,
       pricingCode: HIDDEN_UNLOCK_CODE,
@@ -415,7 +488,6 @@ export async function unlockHiddenForIdentity(
       skipPayment: payload.skipPaymentCheck ?? false,
     });
 
-    // 4) Insert unlock record
     const { error: insertUnlockError } = await supabaseAdmin
       .from("rania_hidden_unlocks")
       .insert({
@@ -431,7 +503,6 @@ export async function unlockHiddenForIdentity(
     if (insertUnlockError) throw insertUnlockError;
   }
 
-  // 5) Return full text
   const fullText = (moment as any).hidden_full_text ?? "";
 
   return {
@@ -440,7 +511,7 @@ export async function unlockHiddenForIdentity(
 }
 
 // -----------------------------------------------------------------------------
-// 6) Reaction to hidden truth (second reply, free)
+// 8) Reaction – unchanged, still notifies sender
 // -----------------------------------------------------------------------------
 
 export async function createReaction(input: {
@@ -504,8 +575,7 @@ export async function createReaction(input: {
 
   return { ok: true };
 }
-// 7) Deep Truth - paid, with tracking & AiSensy
-// -----------------------------------------------------------------------------
+
 
 export async function runDeepTruth(payload: DeepTruthPayload) {
   const identity = await ensureIdentity(payload.identity);
@@ -555,10 +625,14 @@ export async function runDeepTruth(payload: DeepTruthPayload) {
 
   return { deepTruth: deepTruthText };
 }
-// -----------------------------------------------------------------------------
-// 8) Truth Level 2 (follow-up) - optional
-// -----------------------------------------------------------------------------
 
+
+
+
+// -----------------------------------------------------------------------------
+// 9) Deep Truth & Truth Level 2 unchanged (omitted for brevity)
+// (keep your existing runDeepTruth and runTruthLevel2 here)
+// -----------------------------------------------------------------------------
 export async function runTruthLevel2(payload: TruthLevel2Payload) {
   const identity = await ensureIdentity(payload.identity);
 

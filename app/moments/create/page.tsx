@@ -29,13 +29,55 @@ declare global {
   }
 }
 
-const MODES: { key: RaniaModeKey; label: string; description: string; emoji: string }[] = [
-  { key: "CRUSH_REVEAL", label: "Crush Reveal", description: "Say what you admire but never said.", emoji: "💕" },
-  { key: "DEEP_CONFESSION", label: "Deep Confession", description: "Explain yourself honestly.", emoji: "🎭" },
-  { key: "BESTIE_TRUTH_CHAIN", label: "Bestie Truth", description: "Friendship truth, no sugar.", emoji: "👯" },
-  { key: "ROAST_ME_SOFTLY", label: "Roast Me", description: "Safe, honest banter.", emoji: "🔥" },
-  { key: "FORGIVE_ME", label: "Forgive Me", description: "Accountable, grown-up apology.", emoji: "🤝" },
-  { key: "CLOSURE", label: "Closure", description: "End a chapter with clarity.", emoji: "✨" },
+const MODES: {
+  key: RaniaModeKey;
+  label: string;
+  description: string;
+  emoji: string;
+  welcomeMsg: string;
+}[] = [
+  {
+    key: "CRUSH_REVEAL",
+    label: "Crush Reveal",
+    description: "Say what you admire but never said.",
+    emoji: "💕",
+    welcomeMsg: "Someone admires you… find out who! 💕",
+  },
+  {
+    key: "DEEP_CONFESSION",
+    label: "Deep Confession",
+    description: "Explain yourself honestly.",
+    emoji: "🎭",
+    welcomeMsg: "A heartfelt confession is waiting for you 🎭",
+  },
+  {
+    key: "BESTIE_TRUTH_CHAIN",
+    label: "Bestie Truth",
+    description: "Friendship truth, no sugar.",
+    emoji: "👯",
+    welcomeMsg: "Your bestie has some real talk for you 👯",
+  },
+  {
+    key: "ROAST_ME_SOFTLY",
+    label: "Roast Me",
+    description: "Safe, honest banter.",
+    emoji: "🔥",
+    welcomeMsg: "Ready for some friendly roasting? 🔥",
+  },
+  {
+    key: "FORGIVE_ME",
+    label: "Forgive Me",
+    description: "Accountable, grown-up apology.",
+    emoji: "🤝",
+    welcomeMsg: "Someone wants to make things right 🤝",
+  },
+  {
+    key: "CLOSURE",
+    label: "Closure",
+    description: "End a chapter with clarity.",
+    emoji: "✨",
+    welcomeMsg: "A moment of closure awaits you ✨",
+  },
 ];
 
 const LANG_OPTIONS: { value: RaniaLanguage; label: string }[] = [
@@ -64,9 +106,12 @@ export default function CreateMomentPage() {
   const [modeKey, setModeKey] = useState<RaniaModeKey>("BESTIE_TRUTH_CHAIN");
   const [language, setLanguage] = useState<RaniaLanguage>("en");
   const [tone, setTone] = useState<RaniaTone>("soft");
-  const [deliveryFormat, setDeliveryFormat] = useState<RaniaDeliveryFormat>("still");
+  const [deliveryFormat, setDeliveryFormat] =
+    useState<RaniaDeliveryFormat>("still");
 
-  const [teaserText, setTeaserText] = useState("Real talk time… reply first.");
+  const [teaserText, setTeaserText] = useState(
+    "Real talk time… reply first.",
+  );
   const [senderName, setSenderName] = useState("");
   const [senderPhone, setSenderPhone] = useState("");
   const [senderEmail, setSenderEmail] = useState("");
@@ -82,7 +127,10 @@ export default function CreateMomentPage() {
 
   const [freePolishCount, setFreePolishCount] = useState<number>(() => {
     try {
-      const val = typeof window !== "undefined" ? window.localStorage.getItem("freePolishCount") : null;
+      const val =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("freePolishCount")
+          : null;
       return val ? Number(val) : 3;
     } catch {
       return 3;
@@ -101,7 +149,13 @@ export default function CreateMomentPage() {
       : "https://raniaonline.com";
 
   const momentUrl = shortCode ? `${baseUrl}/m/${shortCode}` : "";
-  const caption = shortCode ? `Reply here and complete the moment: ${momentUrl}` : "";
+  const currentMode = MODES.find((m) => m.key === modeKey);
+  const senderNameDisplay = senderName.trim() || "A friend";
+  const welcomeMsg =
+    currentMode?.welcomeMsg || "You have a message waiting 💬";
+  const caption = shortCode
+    ? ` From ${senderNameDisplay}: ${welcomeMsg}\n\n${momentUrl}`
+    : "";
 
   const paystackKey =
     typeof window !== "undefined"
@@ -154,7 +208,6 @@ export default function CreateMomentPage() {
       setShortCode(res.shortCode);
       setMomentId(res.momentId);
 
-      // Scroll down to preview & share section
       setTimeout(() => {
         previewRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 150);
@@ -205,12 +258,14 @@ export default function CreateMomentPage() {
     }
 
     if (!senderEmail || !senderEmail.includes("@")) {
-      setPolishError("Enter a valid email for Paystack receipt before polishing.");
+      setPolishError("Enter a valid email before polishing.");
       return;
     }
 
     setPolishingField("teaser");
-    const amountKES = Number(process.env.NEXT_PUBLIC_POLISH_PRICE_KES ?? 20);
+    const amountKES = Number(
+      process.env.NEXT_PUBLIC_POLISH_PRICE_KES ?? 20,
+    );
     const handler = window.PaystackPop.setup({
       key: paystackKey,
       email: senderEmail,
@@ -225,11 +280,17 @@ export default function CreateMomentPage() {
 
   return (
     <>
-      <Script src="https://js.paystack.co/v1/inline.js" strategy="afterInteractive" />
+      <Script
+        src="https://js.paystack.co/v1/inline.js"
+        strategy="afterInteractive"
+      />
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white relative">
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }}></div>
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
+          <div
+            className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl animate-pulse"
+            style={{ animationDelay: "1s" }}
+          />
         </div>
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -242,7 +303,9 @@ export default function CreateMomentPage() {
             <div className="space-y-6">
               {/* Modes */}
               <div>
-                <h2 className="text-sm font-bold text-slate-100 uppercase tracking-wider mb-4">Choose Your Moment Type</h2>
+                <h2 className="text-sm font-bold text-slate-100 uppercase tracking-wider mb-4">
+                  Choose Your Moment Type
+                </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {MODES.map((m) => {
                     const active = m.key === modeKey;
@@ -254,12 +317,22 @@ export default function CreateMomentPage() {
                         className={`group relative rounded-xl p-3 sm:p-4 text-left transition-all duration-300 ${
                           active
                             ? "bg-gradient-to-br from-purple-600/40 to-pink-600/30 border border-purple-400/60 shadow-lg shadow-purple-500/20 scale-105"
-                            : "bg-slate-900/50 border border-slate-800 hover:border-slate-700 hover:bg-slate-900/70 hover:scale-102"
+                            : "bg-slate-900/50 border border-slate-800 hover:border-slate-700 hover:bg-slate-900/70 hover:scale-[1.02]"
                         }`}
                       >
-                        <div className="text-2xl sm:text-3xl mb-2">{m.emoji}</div>
-                        <div className={`font-bold text-sm ${active ? "text-purple-100" : "text-slate-100"}`}>{m.label}</div>
-                        <div className="text-xs text-slate-400 mt-1 line-clamp-1">{m.description}</div>
+                        <div className="text-2xl sm:text-3xl mb-2">
+                          {m.emoji}
+                        </div>
+                        <div
+                          className={`font-bold text-sm ${
+                            active ? "text-purple-100" : "text-slate-100"
+                          }`}
+                        >
+                          {m.label}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1 line-clamp-1">
+                          {m.description}
+                        </div>
                       </button>
                     );
                   })}
@@ -267,25 +340,76 @@ export default function CreateMomentPage() {
               </div>
 
               {/* Sender Info */}
-              <div ref={detailsRef} className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 sm:p-6 space-y-4">
-                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">Your Details</h3>
+              <div
+                ref={detailsRef}
+                className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 sm:p-6 space-y-4"
+              >
+                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
+                  Your Details
+                </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <input type="text" placeholder="Name" value={senderName} onChange={(e) => setSenderName(e.target.value)} className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none text-white" />
-                  <input type="tel" placeholder="+2547..." value={senderPhone} onChange={(e) => setSenderPhone(e.target.value)} className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none text-white" />
-                  <input type="email" placeholder="Email" value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none text-white" />
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value={senderName}
+                    onChange={(e) => setSenderName(e.target.value)}
+                    className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none text-white"
+                  />
+                  <input
+                    type="tel"
+                    placeholder="+2547..."
+                    value={senderPhone}
+                    onChange={(e) => setSenderPhone(e.target.value)}
+                    className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none text-white"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={senderEmail}
+                    onChange={(e) => setSenderEmail(e.target.value)}
+                    className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm placeholder-slate-500 focus:border-purple-400 focus:outline-none text-white"
+                  />
                 </div>
               </div>
 
               {/* Customization */}
               <div className="grid grid-cols-3 gap-4">
-                {[{ label: "Language", state: language, setState: setLanguage, options: LANG_OPTIONS },
-                  { label: "Tone", state: tone, setState: setTone, options: TONE_OPTIONS },
-                  { label: "Format", state: deliveryFormat, setState: setDeliveryFormat, options: DELIVERY_OPTIONS }
+                {[
+                  {
+                    label: "Language",
+                    state: language,
+                    setState: setLanguage,
+                    options: LANG_OPTIONS,
+                  },
+                  {
+                    label: "Tone",
+                    state: tone,
+                    setState: setTone,
+                    options: TONE_OPTIONS,
+                  },
+                  {
+                    label: "Format",
+                    state: deliveryFormat,
+                    setState: setDeliveryFormat,
+                    options: DELIVERY_OPTIONS,
+                  },
                 ].map((group) => (
                   <div key={group.label}>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">{group.label}</label>
-                    <select value={group.state} onChange={(e) => group.setState(e.target.value as any)} className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-3 py-2 text-sm focus:border-purple-400 focus:outline-none text-white">
-                      {group.options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                      {group.label}
+                    </label>
+                    <select
+                      value={group.state}
+                      onChange={(e) =>
+                        group.setState(e.target.value as any)
+                      }
+                      className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-3 py-2 text-sm focus:border-purple-400 focus:outline-none text-white"
+                    >
+                      {group.options.map((opt: any) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 ))}
@@ -294,17 +418,42 @@ export default function CreateMomentPage() {
               {/* Teaser */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-slate-100">👀 Teaser</label>
-                  <button type="button" onClick={handlePolish} disabled={polishing} className="text-xs px-3 py-1 rounded-full bg-pink-500/20 border border-pink-400/50 text-pink-200 hover:bg-pink-500/30 transition disabled:opacity-50">
-                    {polishing ? "✨ Polishing…" : freePolishCount > 0 ? `✨ Polish (${freePolishCount} left)` : "✨ Polish"}
+                  <label className="text-sm font-bold text-slate-100">
+                    👀 Teaser
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handlePolish}
+                    disabled={polishing}
+                    className="text-xs px-3 py-1 rounded-full bg-pink-500/20 border border-pink-400/50 text-pink-200 hover:bg-pink-500/30 transition disabled:opacity-50"
+                  >
+                    {polishing
+                      ? "✨ Polishing…"
+                      : freePolishCount > 0
+                      ? `✨ Polish (${freePolishCount} left)`
+                      : "✨ Polish"}
                   </button>
                 </div>
-                <textarea value={teaserText} onChange={(e) => setTeaserText(e.target.value)} rows={3} className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-purple-400 focus:outline-none resize-none" />
+                <textarea
+                  value={teaserText}
+                  onChange={(e) => setTeaserText(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-xl bg-slate-950/60 border border-slate-700 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-purple-400 focus:outline-none resize-none"
+                  placeholder="Start with your own words, or polish with RANIA."
+                />
               </div>
 
-              {(polishError || error) && <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-200">⚠️ {polishError || error}</div>}
+              {(polishError || error) && (
+                <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-200">
+                  ⚠️ {polishError || error}
+                </div>
+              )}
 
-              <button onClick={handleSubmit} disabled={creating} className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold shadow-lg shadow-purple-500/40 hover:scale-105 transition-all duration-300 disabled:opacity-60">
+              <button
+                onClick={handleSubmit}
+                disabled={creating}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 text-white font-bold shadow-lg shadow-purple-500/40 hover:scale-105 transition-all duration-300 disabled:opacity-60"
+              >
                 {creating ? "⏳ Creating…" : "✨ Create Free Moment"}
               </button>
             </div>
@@ -314,37 +463,76 @@ export default function CreateMomentPage() {
               {/* Preview Card */}
               <div className="bg-gradient-to-br from-slate-900/60 to-slate-950/40 border border-slate-800/60 rounded-2xl p-6 backdrop-blur-sm">
                 <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 px-4 py-2 mb-4">
-                  <span className="text-2xl">{MODES.find((m) => m.key === modeKey)?.emoji}</span>
-                  <span className="text-xs font-bold uppercase text-purple-200">{MODES.find((m) => m.key === modeKey)?.label}</span>
+                  <span className="text-2xl">{currentMode?.emoji}</span>
+                  <span className="text-xs font-bold uppercase text-purple-200">
+                    {currentMode?.label}
+                  </span>
                 </div>
                 <p className="text-xs text-slate-400 mb-4">Preview</p>
                 <div className="space-y-4 bg-slate-950/50 border border-slate-700/50 rounded-xl p-5">
                   <div>
-                    <p className="text-xs text-slate-400 font-semibold mb-2">TEASER</p>
-                    <p className="text-base leading-relaxed text-slate-100 font-medium">{teaserText}</p>
+                    <p className="text-xs text-slate-400 font-semibold mb-2">
+                      TEASER
+                    </p>
+                    <p className="text-base leading-relaxed text-slate-100 font-medium">
+                      {teaserText}
+                    </p>
                   </div>
                   <div className="h-px bg-gradient-to-r from-slate-700 to-transparent"></div>
                   <div>
-                    <p className="text-xs text-slate-400 font-semibold mb-2">HIDDEN (After reply)</p>
-                    <p className="text-sm leading-relaxed text-slate-100 blur-md hover:blur-none transition-all cursor-default select-none">Hidden truth will appear in the manage page after the receiver replies.</p>
+                    <p className="text-xs text-slate-400 font-semibold mb-2">
+                      HIDDEN (After reply)
+                    </p>
+                    <p className="text-sm leading-relaxed text-slate-100 blur-md hover:blur-none transition-all cursor-default select-none">
+                      Hidden truth will appear in the manage page after the receiver replies.
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between mt-4 text-xs text-slate-500">
                   <span>RANIA · emotional thread</span>
-                  <span className="px-3 py-1 rounded-full bg-slate-900 border border-slate-700">{shortCode || "pending"}</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-900 border border-slate-700">
+                    {shortCode || "pending"}
+                  </span>
                 </div>
               </div>
 
               {/* Share & Manage */}
               {shortCode && (
                 <div className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-400/30 rounded-2xl p-6 space-y-4">
-                  <div className="flex items-center gap-2 mb-2"><span>🚀</span><h3 className="font-bold text-purple-100">Ready to share</h3></div>
-                  <textarea readOnly rows={3} value={caption} className="w-full bg-slate-900/50 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-100 resize-none" />
-                  <div className="grid grid-cols-2 gap-3">
-                    <button onClick={() => navigator.clipboard.writeText(caption)} className="py-3 rounded-lg bg-purple-500/30 border border-purple-400/50 text-purple-200 font-semibold text-sm hover:bg-purple-500/40 transition">📋 Copy caption</button>
-                    <button onClick={() => window.open(`/m/${shortCode}`, "_blank")} className="py-3 rounded-lg bg-cyan-500/30 border border-cyan-400/50 text-cyan-200 font-semibold text-sm hover:bg-cyan-500/40 transition">👀 View as receiver</button>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span>🚀</span>
+                    <h3 className="font-bold text-purple-100">
+                      Ready to share
+                    </h3>
                   </div>
-                  <button onClick={() => window.open(`/moments/manage/${shortCode}`, "_blank")} className="w-full py-3 rounded-lg border border-pink-500/60 bg-slate-950 text-pink-200 font-semibold text-sm hover:bg-pink-500/10 transition">🛠 Manage this moment</button>
+                  <textarea
+                    readOnly
+                    rows={3}
+                    value={caption}
+                    className="w-full bg-slate-900/50 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-100 resize-none"
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => caption && navigator.clipboard.writeText(caption)}
+                      className="py-3 rounded-lg bg-purple-500/30 border border-purple-400/50 text-purple-200 font-semibold text-sm hover:bg-purple-500/40 transition"
+                    >
+                      📋 Copy caption
+                    </button>
+                    <button
+                      onClick={() => window.open(`/m/${shortCode}`, "_blank")}
+                      className="py-3 rounded-lg bg-cyan-500/30 border border-cyan-400/50 text-cyan-200 font-semibold text-sm hover:bg-cyan-500/40 transition"
+                    >
+                      👀 View as receiver
+                    </button>
+                  </div>
+                  <button
+                    onClick={() =>
+                      window.open(`/moments/manage/${shortCode}`, "_blank")
+                    }
+                    className="w-full py-3 rounded-lg border border-pink-500/60 bg-slate-950 text-pink-200 font-semibold text-sm hover:bg-pink-500/10 transition"
+                  >
+                    🛠 Manage this moment
+                  </button>
                 </div>
               )}
             </div>

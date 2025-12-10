@@ -48,6 +48,7 @@ export interface ReplyPayload {
 }
 
 export interface DeepTruthPayload {
+  mId(mId: any): unknown;
   momentId: string;
   identity: {
     guestId?: string;
