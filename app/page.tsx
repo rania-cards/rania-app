@@ -1,5 +1,4 @@
-/* eslint-disable react/jsx-no-duplicate-props */
-"use client";
+"use client"
 import { motion, Variants } from "framer-motion";
 import { ChevronDown, Sparkles, Heart, Lock, MessageCircle } from "lucide-react";
 import Link from "next/link";
@@ -9,7 +8,7 @@ const fadeUp = (delay = 0): Variants => ({
   visible: {
     opacity: 1,
     y: 0,
-    transition: { delay, duration: 0.6, ease: "easeOut" },
+    transition: { delay, duration: 0.6, type: "tween" },
   },
 });
 
@@ -18,7 +17,7 @@ const scaleIn = (delay = 0): Variants => ({
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { delay, duration: 0.6, ease: "easeOut" },
+    transition: { delay, duration: 0.6, type: "tween" },
   },
 });
 
@@ -27,7 +26,7 @@ const slideInLeft = (delay = 0): Variants => ({
   visible: {
     opacity: 1,
     x: 0,
-    transition: { delay, duration: 0.6, ease: "easeOut" },
+    transition: { delay, duration: 0.6, type: "tween" },
   },
 });
 
@@ -36,11 +35,11 @@ const slideInRight = (delay = 0): Variants => ({
   visible: {
     opacity: 1,
     x: 0,
-    transition: { delay, duration: 0.6, ease: "easeOut" },
+    transition: { delay, duration: 0.6, type: "tween" },
   },
 });
 
-const staggerContainer: Variants = {
+const staggerContainer = {
   hidden: {},
   visible: {
     transition: { staggerChildren: 0.1, delayChildren: 0.1 },
@@ -72,7 +71,6 @@ export default function HomePage() {
           transition={{ duration: 9, repeat: Infinity, delay: 2 }}
           className="absolute -bottom-40 left-1/3 w-96 h-96 bg-cyan-600/30 rounded-full blur-3xl"
         />
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml?svgns=http://www.w3.org/2000/svg&width=50&height=50&viewBox=0 0 50 50')] opacity-5" />
       </div>
 
       {/* HERO SECTION */}
@@ -124,7 +122,7 @@ export default function HomePage() {
                 className="text-sm sm:text-base text-slate-300 max-w-xl leading-relaxed"
               >
                 RANIA is an emotional messaging platform designed for Gen Z.
-                You send a teaser, they reply, you reveal your hidden truth, and
+                You send a teaser, they reply, you drop a clue, they guess, you reveal your truth, and
                 both of you react honestly. Perfect for crushes, best friends,
                 and deep confessions.
               </motion.p>
@@ -161,7 +159,8 @@ export default function HomePage() {
                 {[
                   "✨ Free to create & share moments",
                   "💬 Designed around WhatsApp & Status sharing",
-                  "🔒 Hidden messages only visible through your RANIA link",
+                  "🕵️ Drop clues and make them guess your truth",
+                  "🔒 Hidden messages only visible after the full journey",
                   "📱 Built for Gen Z emotions and screenshots",
                 ].map((feature, i) => (
                   <motion.div
@@ -205,12 +204,30 @@ export default function HomePage() {
                   },
                   {
                     step: 3,
+                    emoji: "🕵️",
+                    title: "You Drop a Clue",
+                    text: '"It\'s something I\'ve felt but never said..."',
+                    color: "from-yellow-500/20 to-yellow-600/20",
+                    border: "border-yellow-400/40",
+                    delay: 0.15,
+                  },
+                  {
+                    step: 4,
+                    emoji: "🎯",
+                    title: "They Guess",
+                    text: '"I think you\'re telling me..."',
+                    color: "from-orange-500/20 to-orange-600/20",
+                    border: "border-orange-400/40",
+                    delay: 0.2,
+                  },
+                  {
+                    step: 5,
                     emoji: "🔓",
                     title: "Reveal Truth",
                     text: '"I care about you more than I show..."',
                     color: "from-cyan-500/20 to-cyan-600/20",
                     border: "border-cyan-400/40",
-                    delay: 0.2,
+                    delay: 0.25,
                   },
                 ].map((card, i) => (
                   <motion.div
@@ -220,8 +237,8 @@ export default function HomePage() {
                     transition={{ delay: 0.3 + card.delay, duration: 0.6 }}
                     className={`absolute w-full sm:w-80 p-5 rounded-2xl border ${card.border} bg-gradient-to-br ${card.color} backdrop-blur-xl shadow-2xl hover:shadow-3xl transition-all duration-300`}
                     style={{
-                      top: `${i * 120}px`,
-                      right: `${i * 20}px`,
+                      top: `${i * 100}px`,
+                      right: `${i * 16}px`,
                       zIndex: i,
                     }}
                   >
@@ -241,8 +258,12 @@ export default function HomePage() {
                       {i === 0 &&
                         "Share your link on WhatsApp, IG, or anywhere you chat."}
                       {i === 1 &&
-                        "Their reply opens the door to your hidden truth."}
+                        "Their reply opens the door to the game."}
                       {i === 2 &&
+                        "Give them a hint about your real truth."}
+                      {i === 3 &&
+                        "They take their best guess based on your clue."}
+                      {i === 4 &&
                         "You choose how much to reveal and when."}
                     </p>
                   </motion.div>
@@ -276,7 +297,7 @@ export default function HomePage() {
                 Works
               </h2>
               <p className="text-slate-300 text-sm sm:text-base max-w-2xl mx-auto">
-                Five simple steps to share authentic emotions and build deeper
+                Five steps to share authentic emotions, play a guessing game, and build deeper
                 connections through honest conversations.
               </p>
             </motion.div>
@@ -297,25 +318,25 @@ export default function HomePage() {
                   num: "2",
                   icon: <Heart size={24} />,
                   title: "They Reply Honestly",
-                  desc: "Share your link on WhatsApp. They reply, and their response unlocks what you really meant.",
+                  desc: "Share your link on WhatsApp. They reply, and the game begins.",
                 },
                 {
                   num: "3",
-                  icon: <Lock size={24} />,
-                  title: "Reveal Your Truth",
-                  desc: "After seeing their reply, you can write or refine your hidden truth in the manage page.",
+                  icon: <Sparkles size={24} />,
+                  title: "Drop a Clue",
+                  desc: "Send a hint about your real truth. Make them curious but not spoil it.",
                 },
                 {
                   num: "4",
-                  icon: <Sparkles size={24} />,
-                  title: "Reactions Go Deeper",
-                  desc: "They see the full truth, react back, and you can respond again from your side.",
+                  icon: <MessageCircle size={24} />,
+                  title: "They Guess",
+                  desc: "Based on your clue, they guess what you really meant. See how close they get.",
                 },
                 {
                   num: "5",
-                  icon: <MessageCircle size={24} />,
-                  title: "Keep the Memory",
-                  desc: "Download beautiful shareable cards to remember and celebrate these authentic moments.",
+                  icon: <Lock size={24} />,
+                  title: "Reveal Your Truth",
+                  desc: "After their guess, share the full truth. Reactions go deeper when they're earned.",
                 },
               ].map((step, i) => (
                 <motion.div
@@ -360,7 +381,7 @@ export default function HomePage() {
               </h2>
               <p className="text-slate-300 text-sm sm:text-base">
                 RANIA empowers honest emotional expression and meaningful
-                connections.
+                connections through playful vulnerability.
               </p>
             </motion.div>
 
@@ -372,7 +393,9 @@ export default function HomePage() {
                 {
                   tag: "💕 Crush Reveal",
                   teaser: '"I laugh a little too hard at your jokes..."',
-                  hidden:
+                  clue: '"It\'s about how you make me feel..."',
+                  guess: '"Wait... do you like me?"',
+                  truth:
                     '"I\'ve had a crush on you for months. You mean more to me than you know."',
                   desc: "Perfect for those moments when you need to confess romantic feelings honestly.",
                 },
@@ -380,21 +403,27 @@ export default function HomePage() {
                   tag: "👯 Bestie Truth",
                   teaser:
                     '"There\'s something about our friendship I\'ve never said..."',
-                  hidden:
+                  clue: '"It\'s about how much you\'ve helped me..."',
+                  guess: '"You\'re the best friend anyone could have?"',
+                  truth:
                     '"You\'ve held me down in ways I never acknowledged. I\'m truly grateful for you."',
                   desc: "Strengthen friendships by sharing authentic appreciation and vulnerability.",
                 },
                 {
                   tag: "🎭 Deep Confession",
                   teaser: '"I need to be honest about something..."',
-                  hidden:
+                  clue: '"It\'s something I\'ve been carrying alone..."',
+                  guess: '"Are you struggling with something?"',
+                  truth:
                     '"I\'ve been struggling but never wanted to burden you with it."',
                   desc: "Share personal struggles and build deeper emotional understanding.",
                 },
                 {
                   tag: "🤝 Forgive Me",
                   teaser: '"I owe you a real apology..."',
-                  hidden:
+                  clue: '"It\'s about something I said/did..."',
+                  guess: '"Are you sorry for what happened between us?"',
+                  truth:
                     '"I was wrong. I\'m sorry and want to make things right between us."',
                   desc: "Take accountability and heal relationships through genuine communication.",
                 },
@@ -415,7 +444,7 @@ export default function HomePage() {
                     </span>
                   </div>
 
-                  <div className="space-y-2 border-l-2 border-pink-400/30 pl-3">
+                  <div className="space-y-3 border-l-2 border-pink-400/30 pl-3">
                     <div>
                       <p className="text-xs font-semibold text-slate-300">
                         Teaser
@@ -426,10 +455,26 @@ export default function HomePage() {
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-slate-300">
-                        Hidden Truth
+                        Your Clue
                       </p>
                       <p className="text-sm text-slate-300 italic">
-                        {ex.hidden}
+                        {ex.clue}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-300">
+                        Their Guess
+                      </p>
+                      <p className="text-sm text-slate-300 italic">
+                        {ex.guess}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-300">
+                        Your Truth
+                      </p>
+                      <p className="text-sm text-slate-300 italic">
+                        {ex.truth}
                       </p>
                     </div>
                   </div>
@@ -465,8 +510,8 @@ export default function HomePage() {
                   Ready to share your truth?
                 </h2>
                 <p className="text-sm text-slate-900/80 max-w-md">
-                  Create your first emotional moment. Let them reply, see your
-                  hidden truth, and build a real connection.
+                  Create your first emotional moment. Let them reply, read your clue, guess your truth,
+                  and build a real connection.
                 </p>
               </div>
 
