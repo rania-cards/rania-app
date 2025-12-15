@@ -181,6 +181,12 @@ export default function ManageMomentPage() {
           setTruthSubmitted(savedTruth.truthSubmitted);
         }
 
+
+
+        const savedPolish = await loadFromStorage("polish");
+if (savedPolish) {
+  setPolishAttempts(savedPolish.polishAttempts);
+}
         const savedReaction = await loadFromStorage("reaction");
         if (savedReaction) {
           setReceiverReaction(savedReaction.reactionText);
@@ -206,6 +212,7 @@ export default function ManageMomentPage() {
         if (!cancelled) setLoading(false);
       }
     }
+    
 
     load();
     return () => {
@@ -284,73 +291,87 @@ export default function ManageMomentPage() {
 
   // Polish hidden truth
   async function callPolishAPI(text: string) {
-    setIsPolishing(true);
-    setPolishError(null);
-    try {
-      const res = await fetch("/api/rania/polish-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          field: "hidden",
-          text,
-          modeKey: "DEEP_CONFESSION",
-          tone: "soft",
-        }),
-      });
-      const json = await res.json();
-      if (!json.success) {
-        throw new Error(json.error || "Failed to polish text");
-      }
-
-      setFullHiddenText(json.polished);
-      setPolishAttempts((c) => c + 1);
-      setToast("Text polished!");
-    } catch (err: any) {
-      setPolishError(err.message ?? "Failed to polish with RANIA");
-    } finally {
-      setIsPolishing(false);
-    }
-  }
-
-  function handlePolish() {
-    setPolishError(null);
-
-    if (!fullHiddenText.trim()) {
-      setPolishError("Write something first before polishing.");
-      return;
-    }
-
-    if (!window.PaystackPop || !paystackKey) {
-      setPolishError("Payment library not loaded or Paystack key missing.");
-      return;
-    }
-
-    if (!polishEmail || !polishEmail.includes("@")) {
-      setPolishError("Enter a valid email for Paystack receipt before polishing.");
-      return;
-    }
-
-    const handler = window.PaystackPop.setup({
-      key: paystackKey,
-      email: polishEmail,
-      amount: POLISH_PRICE_KES * 100,
-      currency,
-      metadata: {
-        type: "POLISH_TEXT",
+  setIsPolishing(true);
+  setPolishError(null);
+  try {
+    const res = await fetch("/api/rania/polish-text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         field: "hidden",
-        momentId: moment?.id,
-      },
-      callback: function () {
-        void callPolishAPI(fullHiddenText.trim());
-      },
-      onClose: function () {
-        // user closed
-      },
+        text,
+        modeKey: "DEEP_CONFESSION",
+        tone: "soft",
+      }),
     });
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error || "Failed to polish text");
+    }
 
-    handler.openIframe();
+    setFullHiddenText(json.polished);
+    setPolishAttempts((c) => c + 1);
+    await saveToStorage("polish", {
+      polishAttempts: polishAttempts + 1,
+    });
+    setToast("Text polished!");
+  } catch (err: any) {
+    setPolishError(err.message ?? "Failed to polish with RANIA");
+  } finally {
+    setIsPolishing(false);
+  }
+}
+
+function handlePolish() {
+  setPolishError(null);
+
+  if (!fullHiddenText.trim()) {
+    setPolishError("Write something first before polishing.");
+    return;
   }
 
+  const remainingFree = Math.max(
+    0,
+    MAX_FREE_POLISH_ATTEMPTS - polishAttempts,
+  );
+
+  // If they still have free polish attempts, use them directly
+  if (remainingFree > 0) {
+    void callPolishAPI(fullHiddenText.trim());
+    return;
+  }
+
+  // If out of free attempts, require payment
+  if (!window.PaystackPop || !paystackKey) {
+    setPolishError("Payment library not loaded or Paystack key missing.");
+    return;
+  }
+
+  if (!polishEmail || !polishEmail.includes("@")) {
+    setPolishError("Enter a valid email for Paystack receipt before polishing.");
+    return;
+  }
+
+  const handler = window.PaystackPop.setup({
+    key: paystackKey,
+    email: polishEmail,
+    amount: POLISH_PRICE_KES * 100,
+    currency,
+    metadata: {
+      type: "POLISH_TEXT",
+      field: "hidden",
+      momentId: moment?.id,
+    },
+    callback: function () {
+      void callPolishAPI(fullHiddenText.trim());
+    },
+    onClose: function () {
+      // user closed
+    },
+  });
+
+  handler.openIframe();
+}
   // Save final hidden truth
   async function handleSaveHidden(e: React.FormEvent) {
     e.preventDefault();
@@ -494,6 +515,7 @@ async function handleSenderResponse(e: React.FormEvent) {
     setSubmittingResponse(false);
   }
 }
+
 
   if (loading) {
     return (
