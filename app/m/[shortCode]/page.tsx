@@ -7,7 +7,7 @@ import Script from "next/script";
 import { useParams, useRouter } from "next/navigation";
 
 import { DeepTruthCardCanvas } from "@/components/DeepTruthCardCanvas";
-import { MomentCardCanvas } from "@/components/MomentCardCanvas";
+import {FullConversationCardCanvas } from "@/components/MomentCardCanvas";
 import { apiGetMoment, apiReplyToMoment, apiDeepTruth } from "@/lib/rania/client";
 
 declare global {
@@ -76,6 +76,10 @@ export default function MomentViewPage() {
   const [moment, setMoment] = useState<MomentData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+
+
+  const [actualReplyText, setActualReplyText] = useState<string>("");
 
   const [replyText, setReplyText] = useState("");
   const [vibeScore, setVibeScore] = useState<number | undefined>(5);
@@ -304,36 +308,45 @@ export default function MomentViewPage() {
   }, [shortCode, senderResponseText]);
 
   async function handleReplySubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!moment) return;
+  e.preventDefault();
+  if (!moment) return;
 
-    if (!replyText.trim()) {
-      setToast("Reply cannot be empty.");
-      return;
-    }
-
-    setSubmittingReply(true);
-    try {
-      const res = await apiReplyToMoment(shortCode, {
-        replyText: replyText.trim(),
-        vibeScore: vibeScore ?? null,
-        identity: {},
-      });
-      setReplyId(res.replyId);
-      setHasReplied(true);
-      await saveToStorage("reply", {
-        replyId: res.replyId,
-        hasReplied: true,
-      });
-      setReplyText("");
-      setToast("Reply sent. Wait for their clue…");
-    } catch (err: any) {
-      setToast(err.message ?? "Failed to submit reply");
-    } finally {
-      setSubmittingReply(false);
-    }
+  if (!replyText.trim()) {
+    setToast("Reply cannot be empty.");
+    return;
   }
 
+  setSubmittingReply(true);
+  try {
+    const trimmedReply = replyText.trim();
+    
+    const res = await apiReplyToMoment(shortCode, {
+      replyText: trimmedReply,
+      vibeScore: vibeScore ?? null,
+      identity: {},
+    });
+    
+    // Save the actual reply text BEFORE clearing
+    setActualReplyText(trimmedReply);
+    await saveToStorage("actualReply", {
+      actualReplyText: trimmedReply,
+    });
+    
+    setReplyId(res.replyId);
+    setHasReplied(true);
+    await saveToStorage("reply", {
+      replyId: res.replyId,
+      hasReplied: true,
+    });
+    
+    setReplyText("");
+    setToast("Reply sent. Wait for their clue…");
+  } catch (err: any) {
+    setToast(err.message ?? "Failed to submit reply");
+  } finally {
+    setSubmittingReply(false);
+  }
+}
   async function handleGuessSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!moment) return;
@@ -948,18 +961,40 @@ export default function MomentViewPage() {
                           </button>
                         </div>
                       </div>
+{showMomentCard && (
+  <div className="mt-3 space-y-4">
+    <div className="flex items-center justify-between mb-4">
+      <div className="text-sm font-semibold text-slate-200">
+        Conversation Cards
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setShowMomentCard(false)}
+          className="text-xs px-3 py-1 rounded-full border border-slate-700 text-slate-300 hover:bg-slate-800 transition"
+        >
+          Hide
+        </button>
+      </div>
+    </div>
 
-                      {showMomentCard && (
-                        <div className="mt-3">
-                          <MomentCardCanvas
-                            teaser={moment.teaserText}
-                            hiddenText={fullHiddenTextDisplay}
-                            replyText={finalReplyForCard}
-                            shareUrl={`${baseUrl}/m/${moment.shortCode}`}
-                          />
-                        </div>
-                      )}
-                    </div>
+    {/* Full Conversation Card */}
+    <div className="space-y-2 border-t border-slate-700/50 pt-4">
+      <div className="text-xs font-semibold text-cyan-300">
+        Full Conversation (Complete Thread)
+      </div>
+      <FullConversationCardCanvas
+        teaser={moment.teaserText}
+        reply={actualReplyText || "[Reply received]"}
+        clue={moment.clueText || ""}
+        guess={moment.guessText || ""}
+        hiddenTruth={fullHiddenTextDisplay}
+        reaction={finalReactionText || ""}
+        senderResponse={senderResponseText || ""}
+        shareUrl={`${baseUrl}/m/${moment.shortCode}`}
+      />
+    </div>
+  </div>
+)}           </div>
                   </>
                 )}
               </div>

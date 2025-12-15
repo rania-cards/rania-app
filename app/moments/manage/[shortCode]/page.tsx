@@ -438,58 +438,62 @@ export default function ManageMomentPage() {
     }
   }
 
-  async function handleSenderResponse(e: React.FormEvent) {
-    e.preventDefault();
-    if (!moment) return;
+async function handleSenderResponse(e: React.FormEvent) {
+  e.preventDefault();
+  if (!moment) return;
 
-    if (!senderResponse.trim()) {
-      setToast("Response cannot be empty.");
+  if (!senderResponse.trim()) {
+    setToast("Response cannot be empty.");
+    return;
+  }
+
+  setSubmittingResponse(true);
+  try {
+    if (replies.length === 0) {
+      setToast("No replies found to respond to.");
+      setSubmittingResponse(false);
       return;
     }
 
-    setSubmittingResponse(true);
-    try {
-      if (replies.length === 0) {
-        setToast("No replies found to respond to.");
-        setSubmittingResponse(false);
-        return;
-      }
+    const firstReply = replies[0];
 
-      const firstReply = replies[0];
-
-      const res = await fetch(
-        `/api/rania/moments/${moment.id}/sender-response`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-rania-guest-id":
-              typeof window !== "undefined"
-                ? localStorage.getItem("rania_guest_id") ?? ""
-                : "",
-          },
-          body: JSON.stringify({
-            replyId: firstReply.id,
-            senderResponseText: senderResponse.trim(),
-            identity: {},
-          }),
+    const res = await fetch(
+      `/api/rania/moments/${moment.id}/sender-response`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-rania-guest-id":
+            typeof window !== "undefined"
+              ? localStorage.getItem("rania_guest_id") ?? ""
+              : "",
         },
-      );
+        body: JSON.stringify({
+          replyId: firstReply.id,
+          senderResponseText: senderResponse.trim(),
+          identity: {},
+        }),
+      },
+    );
 
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error || "Failed to send response");
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || "Failed to send response");
 
-      await saveToStorage("response", {
-        responseText: senderResponse.trim(),
-      });
-      setSenderResponse("");
-      setToast("Response sent!");
-    } catch (err: any) {
-      setToast(err.message ?? "Error sending response");
-    } finally {
-      setSubmittingResponse(false);
-    }
+    // Clear the input immediately
+    setSenderResponse("");
+    
+    // Then save to storage
+    await saveToStorage("response", {
+      responseText: senderResponse.trim(),
+    });
+    
+    setToast("Response sent!");
+  } catch (err: any) {
+    setToast(err.message ?? "Error sending response");
+  } finally {
+    setSubmittingResponse(false);
   }
+}
 
   if (loading) {
     return (
