@@ -54,25 +54,25 @@ function buildTemplateParams(p: SenderNotificationPayload): Array<{type: string;
   const link = `https://www.raniaonline.com/moments/manage/${p.shortCode}`;
   const replierName = p.replierName || p.name || "Someone";
   
-  let actionText = "";
-  switch (p.event) {
-    case "moment_replied":
-      actionText = p.messagePreview || "replied to your moment";
-      break;
-    case "reaction_posted":
-      actionText = p.messagePreview || "reacted to your hidden truth";
-      break;
-    case "deep_truth":
-      actionText = "ran a Deep Breakdown on your moment";
-      break;
-    default:
-      actionText = "interacted with your moment";
-  }
+  // let actionText = "";
+  // switch (p.event) {
+  //   case "moment_replied":
+  //     actionText = p.messagePreview || "replied to your moment";
+  //     break;
+  //   case "reaction_posted":
+  //     actionText = p.messagePreview || "reacted to your hidden truth";
+  //     break;
+  //   case "deep_truth":
+  //     actionText = "ran a Deep Breakdown on your moment";
+  //     break;
+  //   default:
+  //     actionText = "interacted with your moment";
+  // }
 
   // Must match your template's {{1}}, {{2}}, {{3}} order
   return [
     { type: "text", text: replierName },           // {{1}}
-    { type: "text", text: actionText },            // {{2}}
+           // {{2}}
     { type: "text", text: link }                   // {{3}}
   ];
 }
