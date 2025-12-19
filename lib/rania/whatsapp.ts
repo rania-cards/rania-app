@@ -51,7 +51,7 @@ function normalizePhone(raw: string): string {
  * View conversation: {{3}}
  */
 function buildTemplateParams(p: SenderNotificationPayload): Array<{type: string; text: string}> {
-  const link = `https://www.raniaonline.com/m/${p.shortCode}`;
+  const link = `https://www.raniaonline.com/moments/manage/${p.shortCode}`;
   const replierName = p.replierName || p.name || "Someone";
   
   let actionText = "";
@@ -165,3 +165,5 @@ export async function notifySender(p: SenderNotificationPayload) {
 
   await sendWhatsAppTemplate({ to, templateParams });
 }
+
+
