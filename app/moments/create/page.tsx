@@ -278,6 +278,13 @@ export default function CreateMomentPage() {
     handler.openIframe();
   }
 
+  function handleShareWhatsApp() {
+    if (caption) {
+      const encodedCaption = encodeURIComponent(caption);
+      window.open(`https://wa.me/?text=${encodedCaption}`, "_blank");
+    }
+  }
+
   return (
     <>
       <Script
@@ -519,10 +526,10 @@ export default function CreateMomentPage() {
                       📋 Copy caption
                     </button>
                     <button
-                      onClick={() => window.open(`/m/${shortCode}`, "_blank")}
-                      className="py-3 rounded-lg bg-cyan-500/30 border border-cyan-400/50 text-cyan-200 font-semibold text-sm hover:bg-cyan-500/40 transition"
+                      onClick={handleShareWhatsApp}
+                      className="py-3 rounded-lg bg-green-500/30 border border-green-400/50 text-green-200 font-semibold text-sm hover:bg-green-500/40 transition"
                     >
-                      👀 View as receiver
+                      💬 WhatsApp
                     </button>
                   </div>
                   <button
