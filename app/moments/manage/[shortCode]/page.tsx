@@ -254,10 +254,10 @@ if (savedPolish) {
               latest.sender_response_text &&
               latest.sender_response_text !== senderResponse
             ) {
-              setSenderResponse(latest.sender_response_text);
-              await saveToStorage("response", {
-                responseText: latest.sender_response_text,
-              });
+              // setSenderResponse(latest.sender_response_text);
+              // await saveToStorage("response", {
+              //   responseText: latest.sender_response_text,
+              // });
             }
           }
         }
@@ -469,6 +469,8 @@ async function handleSenderResponse(e: React.FormEvent) {
   }
 
   setSubmittingResponse(true);
+  const responseText = senderResponse.trim(); // Capture the value
+  
   try {
     if (replies.length === 0) {
       setToast("No replies found to respond to.");
@@ -477,6 +479,9 @@ async function handleSenderResponse(e: React.FormEvent) {
     }
 
     const firstReply = replies[0];
+
+    // Clear input IMMEDIATELY (optimistic update)
+    setSenderResponse("");
 
     const res = await fetch(
       `/api/rania/moments/${moment.id}/sender-response`,
@@ -491,7 +496,7 @@ async function handleSenderResponse(e: React.FormEvent) {
         },
         body: JSON.stringify({
           replyId: firstReply.id,
-          senderResponseText: senderResponse.trim(),
+          senderResponseText: responseText,
           identity: {},
         }),
       },
@@ -500,16 +505,15 @@ async function handleSenderResponse(e: React.FormEvent) {
     const json = await res.json();
     if (!json.success) throw new Error(json.error || "Failed to send response");
 
-    // Clear the input immediately
-    setSenderResponse("");
-    
-    // Then save to storage
+    // Save to storage after successful send
     await saveToStorage("response", {
-      responseText: senderResponse.trim(),
+      responseText: responseText,
     });
     
     setToast("Response sent!");
   } catch (err: any) {
+    // If error, restore the text
+    setSenderResponse(responseText);
     setToast(err.message ?? "Error sending response");
   } finally {
     setSubmittingResponse(false);
